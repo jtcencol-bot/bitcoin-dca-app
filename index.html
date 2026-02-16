@@ -66,7 +66,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       </div>
       <div><label>Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
       <div><label>Frequency</label><select id="rFreq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="monthly">Monthly</option></select></div>
-      <div><label>Asset</label><select id="rAsset"><option value="BTC">BTC</option><option value="ETH">ETH</option></select></div>
+      <div id="rAssetWrap"><label>Asset</label><select id="rAsset"><option value="BTC">BTC</option><option value="ETH">ETH</option></select></div>
       <div><label>&nbsp;</label><button id="addRule">Add / Update Rule</button></div>
       <div><label>&nbsp;</label><button id="clearRules">Clear Rules</button></div>
     </div>
@@ -214,6 +214,8 @@ function applyMode(){
   const bteth = mode === 'bteth';
   document.body.classList.add(bteth ? 'mode-bteth' : 'mode-btc');
   $('appTitle').textContent = bteth ? `Bitcoin/ETH DCA Calculator (${quote})` : `Bitcoin DCA Calculator (${quote})`;
+  $('rAssetWrap').style.display = bteth ? '' : 'none';
+  if (!bteth) $('rAsset').value = 'BTC';
 }
 const savedMode = localStorage.getItem('btc.assetMode') || 'btc';
 const savedQuote = localStorage.getItem('btc.quoteMode') || 'CAD';
