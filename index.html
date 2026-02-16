@@ -19,6 +19,7 @@
     table{width:100%;border-collapse:collapse} th,td{border-bottom:1px solid #33406a;padding:8px;text-align:left}
     .hero{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
     .pill{display:inline-block;padding:4px 8px;border:1px solid #3a4670;border-radius:999px;background:#0f1630;color:#b7c3e4;font-size:.8rem}
+    .chip{width:auto;padding:6px 10px;font-size:.85rem;border-radius:999px}
     dialog{border:1px solid #3a4670;background:#0f1630;color:#ecf0ff;border-radius:12px;max-width:760px;width:min(92vw,760px)}
     dialog::backdrop{background:rgba(0,0,0,.55)}
     @media(max-width:980px){.g5,.g4,.g3,.cards{grid-template-columns:1fr 1fr}}
@@ -90,6 +91,13 @@
       <div><label><input id="replaceDipsOnExtract" type="checkbox" checked> Replace existing dips when extracting</label></div>
       <div><label>&nbsp;</label><button id="extractDipsFromShakepay" type="button">Extract Dips from Uploaded Shakepay CSV</button></div>
     </div>
+    <div class="actions" style="margin-top:10px">
+      <span class="small">Sort dips:</span>
+      <button id="sortDipDate" class="chip" type="button">Date</button>
+      <button id="sortDipBestRoi" class="chip" type="button">Best ROI</button>
+      <button id="sortDipWorstRoi" class="chip" type="button">Worst ROI</button>
+      <button id="sortDipBiggestPnl" class="chip" type="button">Biggest PnL</button>
+    </div>
     <div id="dipList" class="list" style="margin-top:10px"></div>
   </section>
 
@@ -146,6 +154,7 @@ const rules = JSON.parse(localStorage.getItem('btc.rules') || 'null') || structu
 const dips = JSON.parse(localStorage.getItem('btc.dips') || '[]');
 const shakepayBuyLots = JSON.parse(localStorage.getItem('btc.shakepayBuyLots') || '[]');
 let editingDipIndex = null;
+let dipSortMode = 'date';
 
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
@@ -156,6 +165,10 @@ const save = () => { localStorage.setItem('btc.rules', JSON.stringify(rules)); l
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
 $('pickRDate').onclick = () => openPicker($('rDate'));
 $('pickDDate').onclick = () => openPicker($('dDate'));
+$('sortDipDate').onclick = () => { dipSortMode = 'date'; render(); };
+$('sortDipBestRoi').onclick = () => { dipSortMode = 'bestRoi'; render(); };
+$('sortDipWorstRoi').onclick = () => { dipSortMode = 'worstRoi'; render(); };
+$('sortDipBiggestPnl').onclick = () => { dipSortMode = 'biggestPnl'; render(); };
 $('helpBtn').onclick = () => $('helpDialog').showModal();
 $('closeHelp').onclick = () => $('helpDialog').close();
 $('demoBtn').onclick = () => {
@@ -170,8 +183,19 @@ function render(){
   $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${r.date}</b>: <b>$${fmt(r.amount)} CAD/day</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
   const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
+  const metric = (d) => {
+    const btcQty = d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0));
+    const valNow = lastPrice > 0 ? btcQty * lastPrice : 0;
+    const pnl = valNow - Number(d.amount || 0);
+    const roi = Number(d.amount) > 0 ? (pnl / Number(d.amount)) * 100 : 0;
+    return {btcQty, valNow, pnl, roi};
+  };
 
-  dips.sort((a,b)=>a.date.localeCompare(b.date));
+  if (dipSortMode === 'date') dips.sort((a,b)=>a.date.localeCompare(b.date));
+  if (dipSortMode === 'bestRoi') dips.sort((a,b)=>metric(b).roi - metric(a).roi);
+  if (dipSortMode === 'worstRoi') dips.sort((a,b)=>metric(a).roi - metric(b).roi);
+  if (dipSortMode === 'biggestPnl') dips.sort((a,b)=>metric(b).pnl - metric(a).pnl);
+
   $('dipList').innerHTML = dips.map((d,i)=>{
     const btcQty = d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0));
     const detail = d.btc ? `${d.btc.toFixed(8)} BTC` : (d.sats ? `${Number(d.sats).toLocaleString()} sats` : (d.price ? `at $${fmt(d.price)} CAD/BTC` : 'uses market daily avg'));
