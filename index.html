@@ -102,6 +102,17 @@
     </div>
     <div id="csvResult" style="margin-top:10px"></div>
   </section>
+
+  <section class="panel">
+    <h2>Shakepay Summary Import (BTC only)</h2>
+    <p class="small">Use <code>crypto_transactions_summary.csv</code> from Shakepay. ETH rows are ignored. This can import BTC buys into Dip Buys and break down rewards (ShakingSats, ShakeSquad, cashback, etc.).</p>
+    <div class="grid g3">
+      <div><label><input id="useShakepay" type="checkbox"> I use Shakepay</label></div>
+      <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
+      <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze + Import</button></div>
+    </div>
+    <div id="shakepayResult" style="margin-top:10px"></div>
+  </section>
 </div>
 
 <dialog id="helpDialog">
@@ -363,6 +374,29 @@ async function getCsvRows(){
   return rows;
 }
 
+function num(v){
+  if (v == null) return 0;
+  const cleaned = String(v).replace(/[$,\s]/g,'');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeShakepayRow(r){
+  return {
+    date: (r['date'] || '').trim(),
+    amountCredited: num(r['amount credited']),
+    assetCredited: (r['asset credited'] || '').trim().toUpperCase(),
+    marketValue: num(r['market value']),
+    marketValueCurrency: (r['market value currency'] || '').trim().toUpperCase(),
+    bookCost: num(r['book cost']),
+    bookCostCurrency: (r['book cost currency'] || '').trim().toUpperCase(),
+    type: (r['type'] || '').trim(),
+    spotRate: num(r['spot rate']),
+    buySellRate: num(r['buy / sell rate']),
+    description: (r['description'] || '').trim() || '(Unlabeled)'
+  };
+}
+
 $('validateCsv').onclick = async () => {
   try {
     const tolPct = Number($('tol').value || 0.5);
@@ -422,6 +456,77 @@ $('importCsvBuys').onclick = async () => {
     $('csvResult').innerHTML = `<p class="ok"><b>Imported ${imported} buy row(s) as dip buys.</b></p>`;
   } catch (e) {
     $('csvResult').innerHTML = `<p class="small warn">${e.message}</p>`;
+  }
+};
+
+$('analyzeShakepay').onclick = async () => {
+  try {
+    if (!$('useShakepay').checked) throw new Error('Tick “I use Shakepay” first.');
+    const file = $('shakepayFile').files[0];
+    if (!file) throw new Error('Pick your Shakepay CSV first.');
+
+    const text = await file.text();
+    const rows = parseCsv(text).map(normalizeShakepayRow);
+    if (!rows.length) throw new Error('No rows found in Shakepay file.');
+
+    const btcRows = rows.filter(r => r.assetCredited === 'BTC');
+    if (!btcRows.length) throw new Error('No BTC rows found.');
+
+    const dates = btcRows.map(r => r.date).filter(Boolean).sort();
+    const start = dates[0] || 'n/a';
+    const end = dates[dates.length-1] || 'n/a';
+
+    let importedBuys = 0;
+    let buyCad = 0;
+    let buyBtc = 0;
+    let rewardBtc = 0;
+
+    const rewardByDesc = {};
+
+    for (const r of btcRows) {
+      const type = r.type.toLowerCase();
+      const date = (r.date || '').slice(0,10);
+      const btc = r.amountCredited || 0;
+      const sats = Math.round(btc * SATS);
+
+      if (type === 'buy') {
+        const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
+        const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
+        if (date && amount > 0) {
+          dips.push({date, amount, price, btc: btc || null, sats: null});
+          importedBuys++;
+          buyCad += amount;
+          buyBtc += btc;
+        }
+      } else if (type === 'reward') {
+        rewardBtc += btc;
+        rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + sats;
+      }
+    }
+
+    save(); render();
+
+    const rewardRows = Object.entries(rewardByDesc)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>`<tr><td>${k}</td><td>${Number(v).toLocaleString()}</td><td>${(v/SATS).toFixed(8)} BTC</td></tr>`)
+      .join('');
+
+    $('shakepayResult').innerHTML = `
+      <p class="ok"><b>Shakepay import complete.</b></p>
+      <div class="cards" style="margin-top:8px">
+        <div class="card"><div class="small">Date range (BTC rows)</div><b>${start} → ${end}</b></div>
+        <div class="card"><div class="small">BTC buy rows imported</div><b>${importedBuys}</b></div>
+        <div class="card"><div class="small">Imported buy CAD</div><b>$${fmt(buyCad)}</b></div>
+        <div class="card"><div class="small">Imported buy BTC</div><b>${buyBtc.toFixed(8)} BTC</b></div>
+      </div>
+      <div class="card" style="margin-top:10px">
+        <div class="small">Rewards breakdown (BTC only)</div>
+        <p><b>Total rewards:</b> ${rewardBtc.toFixed(8)} BTC (${Math.round(rewardBtc*SATS).toLocaleString()} sats)</p>
+        ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
+      </div>
+    `;
+  } catch (e) {
+    $('shakepayResult').innerHTML = `<p class="small warn">${e.message}</p>`;
   }
 };
 
