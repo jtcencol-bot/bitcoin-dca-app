@@ -83,7 +83,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. Asset mode controls whether BTC-only rows or BTC+ETH rows are included in analysis. If you do not use Shakepay, enter your information manually below. Data is processed in-browser and saved only to this browser profile.</p>
     <div class="grid g3">
       <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
-      <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze Shakepay</button></div>
+      <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyse Shakepay</button></div>
       <div></div>
     </div>
     <div id="shakepayResult" style="margin-top:10px"></div>
@@ -94,6 +94,10 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       <div>
         <label>Start Date</label>
         <div class="dateWrap"><input id="rDate" type="date" value="2021-10-31"><button id="pickRDate" type="button">📅</button></div>
+      </div>
+      <div>
+        <label>End Date (optional)</label>
+        <div class="dateWrap"><input id="rEnd" type="date"><button id="pickREnd" type="button">📅</button></div>
       </div>
       <div><label>Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
       <div><label>Frequency</label><select id="rFreq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="monthly">Monthly</option></select></div>
@@ -185,7 +189,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
   </section>
 
   <div id="mobileStickyActions">
-    <button type="button" id="stickyAnalyze">Analyze</button>
+    <button type="button" id="stickyAnalyze">Analyse</button>
     <button type="button" id="stickyCalc">Update</button>
     <button type="button" id="stickyClear">Clear</button>
   </div>
@@ -196,8 +200,8 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
   <h3>Quick Guide</h3>
   <ol>
     <li><b>Pick mode first:</b> Bitcoin-only or BTC+ETH, then CAD or USD quote.</li>
-    <li><b>If you use Shakepay:</b> upload <code>crypto_transactions_summary.csv</code> and click Analyze. The app auto-updates returns.</li>
-    <li><b>DCA rules:</b> add amount + frequency + asset (asset shown in BTC+ETH mode).</li>
+    <li><b>If you use Shakepay:</b> upload <code>crypto_transactions_summary.csv</code> and click Analyse. The app auto-updates returns.</li>
+    <li><b>DCA rules:</b> add start date, optional end date, amount, frequency, and asset (asset shown in BTC+ETH mode).</li>
     <li><b>Dip buys:</b> add/edit manual dips, or extract BTC dips from uploaded Shakepay by threshold.</li>
     <li><b>Sell-aware model:</b> sales are included in overall totals as simple proceeds/units adjustments. Exact realized PnL is approximate without FIFO/LIFO lot accounting and full transfer history.</li>
     <li><b>Use Update Calculated Returns</b> after changing rules/dips/import settings.</li>
@@ -220,7 +224,7 @@ const jget = (k, fallback) => {
 
 const rules = (jget('btc.rules', structuredClone(defaultRules)) || [])
   .filter(r => r && typeof r === 'object')
-  .map(r => ({date: String(r.date || '').slice(0,10), amount: Number(r.amount||0), freq: String(r.freq||'daily'), asset: String(r.asset||'BTC').toUpperCase()}))
+  .map(r => ({date: String(r.date || '').slice(0,10), end: String(r.end || '').slice(0,10), amount: Number(r.amount||0), freq: String(r.freq||'daily'), asset: String(r.asset||'BTC').toUpperCase()}))
   .filter(r => r.date && r.amount > 0 && (r.asset==='BTC' || r.asset==='ETH'));
 const dips = (jget('btc.dips', []) || [])
   .filter(d => d && typeof d === 'object')
@@ -304,6 +308,7 @@ document.querySelectorAll('input[name="quoteMode"]').forEach(el=>el.addEventList
 }));
 
 $('pickRDate').onclick = () => openPicker($('rDate'));
+$('pickREnd').onclick = () => openPicker($('rEnd'));
 $('pickDDate').onclick = () => openPicker($('dDate'));
 $('sortDipDate').onclick = () => { dipSortMode = 'date'; render(); };
 $('sortDipBestRoi').onclick = () => { dipSortMode = 'bestRoi'; render(); };
@@ -331,7 +336,7 @@ if (window.matchMedia('(max-width: 640px)').matches) {
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
-  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${esc(r.date)}</b>: <b>$${fmt(r.amount)} / ${esc(r.freq||'daily')} / ${esc(r.asset||'BTC')}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
+  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${esc(r.date)}</b>${r.end?` to <b>${esc(r.end)}</b>`:' to <b>now</b>'}: <b>$${fmt(r.amount)} / ${esc(r.freq||'daily')} / ${esc(r.asset||'BTC')}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
   const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
   const lastEthPrice = Number(localStorage.getItem('btc.lastCurrentEthPriceCad') || 0);
@@ -384,7 +389,9 @@ window.editDip = i => {
 
 function isRuleHit(rule, d){
   const start = dateObj(rule.date);
+  const end = rule.end ? dateObj(rule.end) : null;
   if (d < start) return false;
+  if (end && d > end) return false;
   const diffDays = Math.floor((d - start) / 86400000);
   const freq = rule.freq || 'daily';
   if (freq === 'daily') return true;
@@ -401,7 +408,7 @@ function isRuleHit(rule, d){
 
 function dcaAmountOnDate(dateStr, asset='BTC'){
   const d = dateObj(dateStr);
-  const applied = rules.filter(r=>r.asset===asset && r.date<=dateStr).sort((a,b)=>a.date.localeCompare(b.date)).pop();
+  const applied = rules.filter(r=>r.asset===asset && r.date<=dateStr && (!r.end || r.end>=dateStr)).sort((a,b)=>a.date.localeCompare(b.date)).pop();
   if (!applied) return 0;
   return isRuleHit(applied, d) ? Number(applied.amount) : 0;
 }
@@ -458,10 +465,11 @@ function priceForDate(map, d){
 }
 
 $('addRule').onclick = () => {
-  const date = $('rDate').value; const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
-  if (!date || amount<=0) return alert('Need valid date + amount.');
-  const i = rules.findIndex(r=>r.date===date && (r.asset||'BTC')===asset);
-  if (i>=0) rules[i] = {date, amount, freq, asset}; else rules.push({date, amount, freq, asset});
+  const date = $('rDate').value; const end = $('rEnd').value || ''; const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
+  if (!date || amount<=0) return alert('Need valid start date + amount.');
+  if (end && end < date) return alert('End date must be on/after start date.');
+  const i = rules.findIndex(r=>r.date===date && (r.end||'')===end && (r.asset||'BTC')===asset);
+  if (i>=0) rules[i] = {date, end, amount, freq, asset}; else rules.push({date, end, amount, freq, asset});
   save(); render();
 };
 $('clearRules').onclick = () => { rules.splice(0, rules.length); save(); render(); };
@@ -473,8 +481,9 @@ $('normalizeRules').onclick = () => {
     const amt = Number(r.amount);
     const freq = r.freq || 'daily';
     const asset = r.asset || 'BTC';
+    const end = r.end || '';
     const prev = out[out.length-1];
-    if (!prev || Number(prev.amount) !== amt || (prev.freq||'daily') !== freq || (prev.asset||'BTC') !== asset) out.push({date:r.date, amount:amt, freq, asset});
+    if (!prev || Number(prev.amount) !== amt || (prev.freq||'daily') !== freq || (prev.asset||'BTC') !== asset || (prev.end||'') !== end) out.push({date:r.date, end, amount:amt, freq, asset});
   }
   rules.splice(0, rules.length, ...out);
   save(); render();
@@ -551,7 +560,7 @@ $('clearDips').onclick = () => { dips.length = 0; save(); render(); resetDipEdit
 $('extractDipsFromShakepay').onclick = () => {
   const minCad = Number($('dipMinCad').value || 250);
   const replace = $('replaceDipsOnExtract').checked;
-  if (!shakepayBuyLots.length) return alert('No Shakepay buy lots loaded. Upload and Analyze Shakepay first.');
+  if (!shakepayBuyLots.length) return alert('No Shakepay buy lots loaded. Upload and Analyse Shakepay first.');
   if (replace) dips.splice(0, dips.length);
 
   let added = 0;
