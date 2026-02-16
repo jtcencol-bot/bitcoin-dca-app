@@ -143,15 +143,6 @@ body.mode-bteth{--accent:#60a5fa}
     <div id="flowResult"></div>
   </section>
 
-  <section class="panel">
-    <h2>Support / Donate</h2>
-    <p class="small">If this tool helped you, tips are appreciated 🙏</p>
-    <div class="grid g3">
-      <div class="item"><div><b>Lightning</b></div><div class="small" id="donLn">crypt0jt@shakepay.me</div><button class="chip" type="button" onclick="copyDonate('donLn')">Copy</button></div>
-      <div class="item"><div><b>ETH</b></div><div class="small" id="donEth">crypt0jt.eth</div><button class="chip" type="button" onclick="copyDonate('donEth')">Copy</button></div>
-      <div class="item"><div><b>Shakepay handle</b></div><div class="small" id="donSp">crypt0jt</div><button class="chip" type="button" onclick="copyDonate('donSp')">Copy</button></div>
-    </div>
-  </section>
 </div>
 
 <dialog id="helpDialog">
@@ -210,13 +201,6 @@ function applyMode(mode){
   document.body.classList.remove('mode-btc','mode-bteth');
   document.body.classList.add(mode === 'bteth' ? 'mode-bteth' : 'mode-btc');
 }
-window.copyDonate = async (id) => {
-  const txt = $(id)?.textContent?.trim() || '';
-  if (!txt) return;
-  try { await navigator.clipboard.writeText(txt); $('status').textContent = `Copied: ${txt}`; }
-  catch { $('status').textContent = 'Copy failed; please copy manually.'; }
-};
-
 const savedMode = localStorage.getItem('btc.assetMode') || 'btc';
 $('assetMode').value = savedMode;
 applyMode(savedMode);
