@@ -44,12 +44,8 @@
     <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app imports BTC buys, analyzes rewards, and shows BTC flow. ETH rows are ignored for now (future versions can include ETH). If you do not use Shakepay, enter your information manually below.</p>
     <div class="grid g3">
       <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
-      <div><label>Min CAD to import as Dip Buy (optional)</label><input id="dipMinCad" type="number" min="0" step="1" value="250"></div>
       <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze Shakepay</button></div>
-    </div>
-    <div class="actions" style="margin-top:10px">
-      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="importAsDips" type="checkbox"> Import qualifying BTC buys as Dip Buys</label>
-      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="replaceDipsOnImport" type="checkbox" checked> Replace existing Dip Buys on import</label>
+      <div></div>
     </div>
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
@@ -88,6 +84,11 @@
       <button id="saveDipEdit" style="display:none;">Save Dip Edit</button>
       <button id="cancelDipEdit" style="display:none;">Cancel Edit</button>
       <button id="clearDips">Clear Dip Buys</button>
+    </div>
+    <div class="grid g3" style="margin-top:10px">
+      <div><label>Min CAD for dip extraction</label><input id="dipMinCad" type="number" min="0" step="1" value="250"></div>
+      <div><label><input id="replaceDipsOnExtract" type="checkbox" checked> Replace existing dips when extracting</label></div>
+      <div><label>&nbsp;</label><button id="extractDipsFromShakepay" type="button">Extract Dips from Uploaded Shakepay CSV</button></div>
     </div>
     <div id="dipList" class="list" style="margin-top:10px"></div>
   </section>
@@ -294,6 +295,25 @@ $('saveDipEdit').onclick = () => {
 $('cancelDipEdit').onclick = () => resetDipEditor();
 $('clearDips').onclick = () => { dips.length = 0; save(); render(); resetDipEditor(); };
 
+$('extractDipsFromShakepay').onclick = () => {
+  const minCad = Number($('dipMinCad').value || 250);
+  const replace = $('replaceDipsOnExtract').checked;
+  if (!shakepayBuyLots.length) return alert('No Shakepay buy lots loaded. Upload and Analyze Shakepay first.');
+  if (replace) dips.splice(0, dips.length);
+
+  let added = 0;
+  for (const lot of shakepayBuyLots) {
+    if (Number(lot.amount) < minCad) continue;
+    const key = `${lot.date}|${Number(lot.amount).toFixed(2)}|${Number(lot.btc||0).toFixed(8)}`;
+    const exists = dips.some(d => `${d.date}|${Number(d.amount).toFixed(2)}|${Number(d.btc||0).toFixed(8)}` === key);
+    if (exists) continue;
+    dips.push({date: lot.date, amount: Number(lot.amount), price: lot.price || null, btc: Number(lot.btc)||null, sats: null});
+    added++;
+  }
+  save(); render();
+  $('status').textContent = `Extracted ${added} dip buy(s) from Shakepay lots using threshold $${fmt(minCad)}.`;
+};
+
 $('calc').onclick = async () => {
   const status = $('status');
   status.textContent = 'Fetching BTC history…';
@@ -440,10 +460,6 @@ $('analyzeShakepay').onclick = async () => {
     const rows = parseCsv(text).map(normalizeShakepayRow);
     if (!rows.length) throw new Error('No rows found in Shakepay file.');
 
-    const dipMinCad = Number($('dipMinCad').value || 250);
-    const importAsDips = $('importAsDips').checked;
-    const replaceDipsOnImport = $('replaceDipsOnImport').checked;
-
     const btcRows = rows.filter(r => r.assetCredited === 'BTC');
     if (!btcRows.length) throw new Error('No BTC rows found.');
 
@@ -453,7 +469,6 @@ $('analyzeShakepay').onclick = async () => {
     const start = dates[0] || 'n/a';
     const end = dates[dates.length-1] || 'n/a';
 
-    let importedBuys = 0;
     let buyCad = 0;
     let buyBtc = 0;
     const parsedBuyLots = [];
@@ -462,10 +477,6 @@ $('analyzeShakepay').onclick = async () => {
     let sentBtc = 0;
 
     const rewardByDesc = {};
-
-    if (importAsDips && replaceDipsOnImport) {
-      dips.splice(0, dips.length);
-    }
 
     for (const r of btcRows) {
       const type = r.type.toLowerCase();
@@ -476,11 +487,7 @@ $('analyzeShakepay').onclick = async () => {
       if (type === 'buy') {
         const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
         const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
-        if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0});
-        if (importAsDips && date && amount >= dipMinCad) {
-          dips.push({date, amount, price, btc: btc || null, sats: null});
-          importedBuys++;
-        }
+        if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0, price: price || null});
         if (amount > 0) {
           buyCad += amount;
           buyBtc += btc;
@@ -517,7 +524,7 @@ $('analyzeShakepay').onclick = async () => {
       <p class="ok"><b>Shakepay import complete.</b></p>
       <div class="cards" style="margin-top:8px">
         <div class="card"><div class="small">Date range (BTC rows)</div><b>${start} → ${end}</b></div>
-        <div class="card"><div class="small">BTC buy rows imported as dips ${importAsDips ? `(≥ $${fmt(dipMinCad)})` : '(import off)'}</div><b>${importedBuys}</b></div>
+        <div class="card"><div class="small">BTC buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
         <div class="card"><div class="small">Total BTC buy CAD (all buys)</div><b>$${fmt(buyCad)}</b></div>
         <div class="card"><div class="small">Total BTC bought (all buys)</div><b>${buyBtc.toFixed(8)} BTC</b></div>
       </div>
