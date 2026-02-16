@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bitcoin DCA Calculator (CAD)</title>
+  <style>
+    :root{--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--text:#ecf0ff;--muted:#a6b2d1;--ok:#22c55e;--warn:#f59e0b}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1080px;margin:0 auto;padding:18px} .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+    h1{margin:0 0 8px} .sub{color:var(--muted);margin:0 0 12px} label{display:block;color:var(--muted);margin:6px 0 4px}
+    input,button,select{width:100%;padding:10px;border-radius:10px;border:1px solid #3a4670;background:#0f1630;color:var(--text)}
+    button{background:#22305c;cursor:pointer;font-weight:700} .grid{display:grid;gap:10px}
+    .g5{grid-template-columns:repeat(5,1fr)} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
+    .list{display:grid;gap:8px}.item{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:8px}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:10px}
+    .small{font-size:.9rem;color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto}
+    .dateWrap{display:flex;gap:6px}.dateWrap input{flex:1}.dateWrap button{width:auto;padding:8px 10px}
+    table{width:100%;border-collapse:collapse} th,td{border-bottom:1px solid #33406a;padding:8px;text-align:left}
+    @media(max-width:980px){.g5,.g4,.g3,.cards{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+    <h1 style="margin:0;">Bitcoin DCA Calculator (CAD)</h1>
+    <button id="clearAll" type="button" style="width:auto;background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
+  </div>
+  <p class="sub">Auto-fetches historical BTC prices, supports rule changes + same-day dip buys + CSV validation.</p>
+
+  <section class="panel">
+    <h2>DCA Rules (daily CAD)</h2>
+    <div class="grid g4">
+      <div>
+        <label>Start Date</label>
+        <div class="dateWrap"><input id="rDate" type="date" value="2021-10-31"><button id="pickRDate" type="button">📅</button></div>
+      </div>
+      <div><label>Daily Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
+      <div><label>&nbsp;</label><button id="addRule">Add / Update Rule</button></div>
+      <div><label>&nbsp;</label><button id="clearRules">Clear Rules</button></div>
+    </div>
+    <div id="ruleList" class="list" style="margin-top:10px"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Dip Buys (CAD)</h2>
+    <p class="small">Optional override fields let you use your books exactly (price + BTC or sats).</p>
+    <div class="grid g5">
+      <div>
+        <label>Date</label>
+        <div class="dateWrap"><input id="dDate" type="date"><button id="pickDDate" type="button">📅</button></div>
+      </div>
+      <div><label>Amount Paid (CAD)</label><input id="dAmt" type="number" min="0" step="0.01" placeholder="1000"></div>
+      <div><label>Book Price (CAD/BTC, optional)</label><input id="dPrice" type="number" min="0" step="0.01" placeholder="90000"></div>
+      <div><label>Received Amount (optional)</label><input id="dQty" type="number" min="0" step="0.00000001" placeholder="0.01111112"></div>
+      <div><label>Received Unit</label><select id="dQtyUnit"><option value="btc">BTC</option><option value="sats">sats</option></select></div>
+    </div>
+    <div class="actions" style="margin-top:10px">
+      <button id="addDip">Add Dip Buy</button>
+      <button id="saveDipEdit" style="display:none;">Save Dip Edit</button>
+      <button id="cancelDipEdit" style="display:none;">Cancel Edit</button>
+      <button id="clearDips">Clear Dip Buys</button>
+    </div>
+    <div id="dipList" class="list" style="margin-top:10px"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Price Source & Calculate</h2>
+    <div class="grid g3">
+      <div>
+        <label>Primary Source</label>
+        <select id="source"><option value="cc-cad">CryptoCompare BTC/CAD daily</option><option value="cc-usd-fx">CryptoCompare BTC/USD × constant FX</option></select>
+      </div>
+      <div><label>Fallback FX (USD→CAD)</label><input id="fx" type="number" min="0.5" step="0.0001" value="1.35"></div>
+      <div><label>&nbsp;</label><button id="calc">Calculate Returns</button></div>
+    </div>
+    <p id="status" class="small" style="margin-top:10px">Ready.</p>
+    <div id="result" style="margin-top:10px"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Upload Transactions (validate / check)</h2>
+    <p class="small">CSV headers accepted: <code>date,type,amount_cad,price_cad,btc,sats,fee_cad</code>. Type can be buy/sell.</p>
+    <div class="grid g3">
+      <div><label>CSV File</label><input id="csvFile" type="file" accept=".csv,text/csv"></div>
+      <div><label>Tolerance (%)</label><input id="tol" type="number" min="0" step="0.01" value="0.5"></div>
+      <div><label>&nbsp;</label><button id="validateCsv">Validate CSV</button></div>
+    </div>
+    <div id="csvResult" style="margin-top:10px"></div>
+  </section>
+</div>
+
+<script>
+const SATS = 100000000;
+const defaultRules = [];
+const rules = JSON.parse(localStorage.getItem('btc.rules') || 'null') || structuredClone(defaultRules);
+const dips = JSON.parse(localStorage.getItem('btc.dips') || '[]');
+let editingDipIndex = null;
+
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+const dayKey = d => new Date(d).toISOString().slice(0,10);
+const dateObj = ymd => new Date(ymd+'T00:00:00');
+const save = () => { localStorage.setItem('btc.rules', JSON.stringify(rules)); localStorage.setItem('btc.dips', JSON.stringify(dips)); };
+
+function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
+$('pickRDate').onclick = () => openPicker($('rDate'));
+$('pickDDate').onclick = () => openPicker($('dDate'));
+
+function render(){
+  rules.sort((a,b)=>a.date.localeCompare(b.date));
+  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${r.date}</b>: <b>$${fmt(r.amount)} CAD/day</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
+
+  dips.sort((a,b)=>a.date.localeCompare(b.date));
+  $('dipList').innerHTML = dips.map((d,i)=>{
+    const detail = d.btc ? `${d.btc.toFixed(8)} BTC` : (d.sats ? `${Number(d.sats).toLocaleString()} sats` : (d.price ? `at $${fmt(d.price)} CAD/BTC` : 'uses market daily avg'));
+    return `<div class="item">${d.date}: <b>$${fmt(d.amount)} CAD</b> — ${detail}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
+  }).join('') || '<p class="small">No dip buys.</p>';
+}
+window.delRule = i => { rules.splice(i,1); save(); render(); };
+window.delDip = i => { dips.splice(i,1); save(); render(); };
+window.editDip = i => {
+  const d = dips[i];
+  if (!d) return;
+  editingDipIndex = i;
+  $('dDate').value = d.date || '';
+  $('dAmt').value = d.amount ?? '';
+  $('dPrice').value = d.price ?? '';
+  $('dQty').value = d.btc ?? (d.sats ?? '');
+  $('dQtyUnit').value = d.btc ? 'btc' : (d.sats ? 'sats' : 'btc');
+  $('addDip').style.display = 'none';
+  $('saveDipEdit').style.display = '';
+  $('cancelDipEdit').style.display = '';
+};
+
+function dailyAmount(dateStr){
+  const applied = rules.filter(r=>r.date<=dateStr).sort((a,b)=>a.date.localeCompare(b.date)).pop();
+  return applied ? Number(applied.amount) : 0;
+}
+
+async function fetchCC(tsym, limit=2000){
+  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=BTC&tsym=${tsym}&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Price API failed: ${res.status}`);
+  const json = await res.json();
+  if (json.Response !== 'Success') throw new Error(json.Message || 'Price API error');
+  return json.Data.Data;
+}
+
+function toDailyMapCC(rows, fx=1){
+  const m = {};
+  for (const r of rows) {
+    if (!r.time || !r.close) continue;
+    const k = new Date(r.time*1000).toISOString().slice(0,10);
+    // use OHLC average as approx daily average
+    const avg = ((Number(r.open)+Number(r.high)+Number(r.low)+Number(r.close))/4) * fx;
+    m[k] = avg;
+  }
+  return m;
+}
+
+function priceForDate(map, d){
+  const x = new Date(d);
+  for (let i=0;i<10;i++) {
+    const k = dayKey(x);
+    if (map[k]) return map[k];
+    x.setDate(x.getDate()-1);
+  }
+  return null;
+}
+
+$('addRule').onclick = () => {
+  const date = $('rDate').value; const amount = Number($('rAmt').value);
+  if (!date || amount<=0) return alert('Need valid date + amount.');
+  const i = rules.findIndex(r=>r.date===date);
+  if (i>=0) rules[i].amount = amount; else rules.push({date, amount});
+  save(); render();
+};
+$('clearRules').onclick = () => { rules.splice(0, rules.length); save(); render(); };
+$('clearAll').onclick = () => {
+  if (!confirm('Clear all rules, dip buys, saved inputs, and results?')) return;
+  rules.splice(0, rules.length);
+  dips.splice(0, dips.length);
+  localStorage.removeItem('btc.rules');
+  localStorage.removeItem('btc.dips');
+  $('result').innerHTML = '';
+  $('csvResult').innerHTML = '';
+  $('status').textContent = 'Cleared.';
+  resetDipEditor();
+  render();
+};
+
+function resetDipEditor(){
+  editingDipIndex = null;
+  $('dDate').value = '';
+  $('dAmt').value = '';
+  $('dPrice').value = '';
+  $('dQty').value = '';
+  $('dQtyUnit').value = 'btc';
+  $('addDip').style.display = '';
+  $('saveDipEdit').style.display = 'none';
+  $('cancelDipEdit').style.display = 'none';
+}
+
+function readDipForm(){
+  const date = $('dDate').value;
+  const amount = Number($('dAmt').value || 0);
+  const price = Number($('dPrice').value || 0);
+  const qty = Number($('dQty').value || 0);
+  const qtyUnit = $('dQtyUnit').value;
+  if (!date || amount<=0) throw new Error('Need dip date + amount.');
+  const btc = qty > 0 && qtyUnit === 'btc' ? qty : null;
+  const sats = qty > 0 && qtyUnit === 'sats' ? qty : null;
+  return {date, amount, price: price||null, btc, sats};
+}
+
+$('addDip').onclick = () => {
+  try {
+    dips.push(readDipForm());
+    save(); render(); resetDipEditor();
+  } catch (e) { alert(e.message); }
+};
+
+$('saveDipEdit').onclick = () => {
+  try {
+    if (editingDipIndex == null || !dips[editingDipIndex]) return alert('No dip selected for edit.');
+    dips[editingDipIndex] = readDipForm();
+    save(); render(); resetDipEditor();
+  } catch (e) { alert(e.message); }
+};
+
+$('cancelDipEdit').onclick = () => resetDipEditor();
+$('clearDips').onclick = () => { dips.length = 0; save(); render(); resetDipEditor(); };
+
+$('calc').onclick = async () => {
+  if (!rules.length) return alert('Add at least one DCA rule.');
+  const status = $('status');
+  status.textContent = 'Fetching BTC history…';
+
+  try {
+    const source = $('source').value;
+    const fx = Number($('fx').value || 1.35);
+
+    let map = {};
+    let sourceLabel = '';
+    if (source === 'cc-cad') {
+      const rows = await fetchCC('CAD', 2000);
+      map = toDailyMapCC(rows, 1);
+      sourceLabel = 'CryptoCompare BTC/CAD (OHLC avg/day)';
+    } else {
+      const rows = await fetchCC('USD', 2000);
+      map = toDailyMapCC(rows, fx);
+      sourceLabel = `CryptoCompare BTC/USD × FX ${fx}`;
+    }
+
+    const start = rules.map(r=>r.date).sort()[0];
+    let invested=0, btc=0, dcaInvested=0, dipInvested=0, skipped=0;
+
+    for (let d=dateObj(start), end=new Date(); d<=end; d.setDate(d.getDate()+1)) {
+      const k = dayKey(d);
+      const amount = dailyAmount(k);
+      if (amount<=0) continue;
+      const px = priceForDate(map, d);
+      if (!px) { skipped++; continue; }
+      invested += amount; dcaInvested += amount; btc += amount/px;
+    }
+
+    for (const dip of dips) {
+      let btcGot = 0;
+      if (dip.btc) btcGot = Number(dip.btc);
+      else if (dip.sats) btcGot = Number(dip.sats)/SATS;
+      else if (dip.price) btcGot = Number(dip.amount)/Number(dip.price);
+      else {
+        const px = priceForDate(map, dateObj(dip.date));
+        if (!px) { skipped++; continue; }
+        btcGot = Number(dip.amount)/px;
+      }
+      invested += Number(dip.amount);
+      dipInvested += Number(dip.amount);
+      btc += btcGot;
+    }
+
+    const current = priceForDate(map, new Date());
+    if (!current) throw new Error('Could not get recent BTC price from source.');
+
+    const value = btc * current;
+    const pnl = value - invested;
+    const roi = invested ? (pnl/invested)*100 : 0;
+
+    $('status').innerHTML = `Done. Source: <b>${sourceLabel}</b>.`;
+    $('result').innerHTML = `
+      <div class="cards">
+        <div class="card"><div class="small">Total Invested (CAD)</div><b>$${fmt(invested)}</b></div>
+        <div class="card"><div class="small">From DCA (CAD)</div><b>$${fmt(dcaInvested)}</b></div>
+        <div class="card"><div class="small">From Dip Buys (CAD)</div><b>$${fmt(dipInvested)}</b></div>
+        <div class="card"><div class="small">Estimated BTC</div><b>${btc.toFixed(8)} BTC</b></div>
+      </div>
+      <div class="cards" style="margin-top:10px">
+        <div class="card"><div class="small">Current BTC Price (CAD)</div><b>$${fmt(current)}</b></div>
+        <div class="card"><div class="small">Portfolio Value (CAD)</div><b>$${fmt(value)}</b></div>
+        <div class="card"><div class="small">PnL (CAD)</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
+        <div class="card"><div class="small">ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
+      </div>
+      <p class="small" style="margin-top:10px">Skipped days/entries due to missing price data: ${skipped}.</p>`;
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+};
+
+function parseCsv(text){
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const head = lines[0].split(',').map(s=>s.trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const cols = line.split(',');
+    const o = {};
+    head.forEach((h,i)=> o[h]= (cols[i]||'').trim());
+    return o;
+  });
+}
+
+$('validateCsv').onclick = async () => {
+  const file = $('csvFile').files[0];
+  if (!file) return alert('Pick a CSV first.');
+  const tolPct = Number($('tol').value || 0.5);
+  const text = await file.text();
+  const rows = parseCsv(text);
+  if (!rows.length) return $('csvResult').innerHTML = '<p class="small warn">No rows found.</p>';
+
+  const issues = [];
+  let checked=0;
+  for (const [i,r] of rows.entries()) {
+    const type = (r.type||'buy').toLowerCase();
+    if (type !== 'buy' && type !== 'sell') continue;
+
+    const amount = Number(r.amount_cad||0);
+    const price = Number(r.price_cad||0);
+    const btc = Number(r.btc||0) || (Number(r.sats||0)/SATS);
+    if (!(amount>0 && price>0 && btc>0)) continue;
+
+    checked++;
+    const implied = amount/price;
+    const errPct = Math.abs((btc - implied)/implied)*100;
+    if (errPct > tolPct) issues.push({row:i+2, errPct, implied, btc, date:r.date||''});
+  }
+
+  if (!checked) {
+    $('csvResult').innerHTML = '<p class="small warn">No valid buy/sell rows with amount_cad + price_cad + btc/sats.</p>';
+    return;
+  }
+
+  $('csvResult').innerHTML = `
+    <p class="small">Checked ${checked} rows. Tolerance ${tolPct}%.</p>
+    ${issues.length ? `<p class="warn"><b>${issues.length} row(s) outside tolerance.</b></p>
+      <table><thead><tr><th>Row</th><th>Date</th><th>Your BTC</th><th>Implied BTC</th><th>Error %</th></tr></thead><tbody>
+      ${issues.slice(0,50).map(x=>`<tr><td>${x.row}</td><td>${x.date}</td><td>${x.btc.toFixed(8)}</td><td>${x.implied.toFixed(8)}</td><td>${x.errPct.toFixed(3)}%</td></tr>`).join('')}
+      </tbody></table>` : '<p class="ok"><b>No material mismatches found.</b></p>'}
+  `;
+};
+
+render();
+</script>
+</body>
+</html>
