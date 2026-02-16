@@ -152,15 +152,24 @@
 <script>
 const SATS = 100000000;
 const defaultRules = [];
-const rules = (JSON.parse(localStorage.getItem('btc.rules') || 'null') || structuredClone(defaultRules))
+const jget = (k, fallback) => {
+  try {
+    const v = JSON.parse(localStorage.getItem(k) || 'null');
+    return v ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const rules = (jget('btc.rules', structuredClone(defaultRules)) || [])
   .filter(r => r && typeof r === 'object')
   .map(r => ({date: String(r.date || '').slice(0,10), amount: Number(r.amount||0), freq: String(r.freq||'daily')}))
   .filter(r => r.date && r.amount > 0);
-const dips = (JSON.parse(localStorage.getItem('btc.dips') || '[]') || [])
+const dips = (jget('btc.dips', []) || [])
   .filter(d => d && typeof d === 'object')
   .map(d => ({date: String(d.date || '').slice(0,10), amount: Number(d.amount||0), price: d.price==null?null:Number(d.price), btc: d.btc==null?null:Number(d.btc), sats: d.sats==null?null:Number(d.sats)}))
   .filter(d => d.date && d.amount > 0);
-const shakepayBuyLots = (JSON.parse(localStorage.getItem('btc.shakepayBuyLots') || '[]') || [])
+const shakepayBuyLots = (jget('btc.shakepayBuyLots', []) || [])
   .filter(l => l && typeof l === 'object')
   .map(l => ({date: String(l.date || '').slice(0,10), amount: Number(l.amount||0), btc: Number(l.btc||0), price: l.price==null?null:Number(l.price)}))
   .filter(l => l.date && l.amount > 0);
