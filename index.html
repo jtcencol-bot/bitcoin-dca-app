@@ -5,19 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bitcoin DCA Calculator (CAD)</title>
   <style>
-    :root{--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--text:#ecf0ff;--muted:#a6b2d1;--ok:#22c55e;--warn:#f59e0b;--accent:#f7931a}
-body.mode-btc{--accent:#f7931a;--bg:#1a1106;--panel:#26180a;--line:#5c3a12;--muted:#e5c39b}
-body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--muted:#a6b2d1}
+    :root{--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--text:#ecf0ff;--muted:#a6b2d1;--ok:#22c55e;--warn:#f59e0b;--accent:#f7931a;--glow:rgba(247,147,26,.25)}
+body.mode-btc{--accent:#f7931a;--bg:#120b03;--panel:#1e1308;--line:#5c3a12;--muted:#e5c39b;--glow:rgba(247,147,26,.26)}
+body.mode-bteth{--accent:#60a5fa;--bg:#070d1b;--panel:#101a31;--line:#2a3458;--muted:#a6b2d1;--glow:rgba(96,165,250,.28)}
     *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
-    .wrap{max-width:1080px;margin:0 auto;padding:18px} .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+    .wrap{max-width:1080px;margin:0 auto;padding:18px}
+    .panel{background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, #ffffff 8%), var(--panel));border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 0 0 1px rgba(255,255,255,.03),0 12px 30px rgba(0,0,0,.28),0 0 30px var(--glow)}
     h1{margin:0 0 8px} .sub{color:var(--muted);margin:0 0 12px} label{display:block;color:var(--muted);margin:6px 0 4px}
     input,button,select{width:100%;padding:10px;border-radius:10px;border:1px solid #3a4670;background:#0f1630;color:var(--text)}
     input[type="radio"],input[type="checkbox"]{width:auto;padding:0;border:0;background:transparent;accent-color:var(--accent)}
-    button{background:#22305c;cursor:pointer;font-weight:700} .grid{display:grid;gap:10px}
+    button{background:#22305c;cursor:pointer;font-weight:700;transition:transform .15s ease, box-shadow .2s ease, border-color .2s ease}
+    button:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.25);border-color:color-mix(in srgb, var(--accent) 45%, #3a4670)}
+    .grid{display:grid;gap:10px}
     h1{color:var(--accent)}
     .g6{grid-template-columns:repeat(6,1fr)} .g5{grid-template-columns:repeat(5,1fr)} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
     .list{display:grid;gap:8px}.item{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:8px}
-    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:10px}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .card{background:linear-gradient(160deg, rgba(15,22,48,.9), rgba(9,14,32,.95));border:1px solid #3a4670;border-radius:12px;padding:10px;position:relative;overflow:hidden}
+    .card::after{content:'';position:absolute;inset:auto -20% -70% -20%;height:120px;background:radial-gradient(ellipse at center, var(--glow), transparent 65%);pointer-events:none}
     .small{font-size:.9rem;color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto}
     .dateWrap{display:flex;gap:6px}.dateWrap input{flex:1}.dateWrap button{width:auto;padding:8px 10px}
     table{width:100%;border-collapse:collapse} th,td{border-bottom:1px solid #33406a;padding:8px;text-align:left}
@@ -26,6 +31,9 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     .chip{width:auto;padding:6px 10px;font-size:.85rem;border-radius:999px}
     dialog{border:1px solid #3a4670;background:#0f1630;color:#ecf0ff;border-radius:12px;max-width:760px;width:min(92vw,760px)}
     dialog::backdrop{background:rgba(0,0,0,.55)}
+    .chartWrap{margin-top:12px;background:linear-gradient(180deg,rgba(8,14,32,.9),rgba(6,10,24,.95));border:1px solid #2d3c67;border-radius:12px;padding:10px}
+    .chartLegend{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 0}
+    .dot{display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:6px}
     @media(max-width:980px){
       .g6,.g5,.g4,.g3,.cards{grid-template-columns:1fr 1fr}
       .hero .actions{width:100%}
@@ -471,6 +479,44 @@ function priceForDate(map, d){
   return null;
 }
 
+function linePath(points, minY, maxY, w, h, pad){
+  if (!points.length) return '';
+  const span = (maxY - minY) || 1;
+  const stepX = points.length > 1 ? (w - pad*2) / (points.length - 1) : 0;
+  return points.map((v,i)=>{
+    const x = pad + i*stepX;
+    const y = h - pad - ((v - minY)/span) * (h - pad*2);
+    return `${i===0?'M':'L'}${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ');
+}
+
+function buildRoiPnlChart(series){
+  if (!series?.length) return '';
+  const w=960, h=260, pad=22;
+  const roiVals = series.map(s=>Number(s.roi||0));
+  const pnlVals = series.map(s=>Number(s.pnl||0));
+  const all = roiVals.concat(pnlVals);
+  const minY = Math.min(...all);
+  const maxY = Math.max(...all);
+  const roiPath = linePath(roiVals,minY,maxY,w,h,pad);
+  const pnlPath = linePath(pnlVals,minY,maxY,w,h,pad);
+  const zeroY = h - pad - ((0-minY)/((maxY-minY)||1))*(h-pad*2);
+  const last = series[series.length-1];
+  return `
+    <div class="chartWrap">
+      <div class="small"><b>Performance Trend</b> (sampled monthly): ROI% and PnL (${getQuoteMode()})</div>
+      <svg viewBox="0 0 ${w} ${h}" width="100%" height="220" role="img" aria-label="ROI and PnL trend chart">
+        <line x1="${pad}" y1="${zeroY.toFixed(2)}" x2="${w-pad}" y2="${zeroY.toFixed(2)}" stroke="#33406a" stroke-dasharray="4 4" />
+        <path d="${roiPath}" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" />
+        <path d="${pnlPath}" fill="none" stroke="#60a5fa" stroke-width="3" stroke-linecap="round" />
+      </svg>
+      <div class="chartLegend small">
+        <span><span class="dot" style="background:#22c55e"></span>ROI % (last: ${Number(last.roi||0).toFixed(2)}%)</span>
+        <span><span class="dot" style="background:#60a5fa"></span>PnL (last: $${fmt(Number(last.pnl||0))})</span>
+      </div>
+    </div>`;
+}
+
 $('addRule').onclick = () => {
   const date = $('rDate').value; const end = $('rOngoing').checked ? '' : ($('rEnd').value || ''); const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
   if (!date || amount<=0) return alert('Need valid start date + amount.');
@@ -731,6 +777,67 @@ $('calc').onclick = async () => {
     const dipPnl = dipValue - dipInvested;
     const dipRoi = dipInvested ? (dipPnl / dipInvested) * 100 : null;
 
+    // Build a lightweight monthly trend chart for ROI/PnL
+    const dateCandidates = [
+      ...rules.map(r=>r.date),
+      ...dips.map(d=>d.date),
+      ...shakepayBuyLots.map(l=>l.date)
+    ].filter(Boolean).sort();
+    const chartSeries = [];
+    if (dateCandidates.length) {
+      const startDate = dateObj(dateCandidates[0]);
+      const today = new Date();
+      const fxNow = Number($('fx').value || 1.35);
+      for (let d = new Date(startDate); d <= today; d.setMonth(d.getMonth()+1)) {
+        const k = dayKey(d);
+        let ci = 0, cBtc=0, cEth=0;
+
+        if (useRules) {
+          for (let dd = new Date(startDate); dd <= d; dd.setDate(dd.getDate()+1)) {
+            const dk = dayKey(dd);
+            const ab = dcaAmountOnDate(dk,'BTC');
+            const ae = dcaAmountOnDate(dk,'ETH');
+            if (ab>0) { const px=priceForDate(maps['BTC'], dd); if (px){ ci+=ab; cBtc += ab/px; } }
+            if (ae>0) { const px=priceForDate(maps['ETH']||maps['BTC'], dd); if (px){ ci+=ae; cEth += ae/px; } }
+          }
+          for (const dip of dips.filter(x=>x.date<=k)) {
+            const asset = (dip.asset||'BTC').toUpperCase();
+            let got = 0;
+            if (asset==='ETH') {
+              if (dip.eth) got = Number(dip.eth);
+              else if (dip.price) got = Number(dip.amount)/Number(dip.price);
+              else { const px=priceForDate(maps['ETH']||maps['BTC'], dateObj(dip.date)); if (px) got = Number(dip.amount)/px; }
+              cEth += got;
+            } else {
+              if (dip.btc) got = Number(dip.btc);
+              else if (dip.sats) got = Number(dip.sats)/SATS;
+              else if (dip.price) got = Number(dip.amount)/Number(dip.price);
+              else { const px=priceForDate(maps['BTC'], dateObj(dip.date)); if (px) got = Number(dip.amount)/px; }
+              cBtc += got;
+            }
+            ci += Number(dip.amount||0);
+          }
+        }
+
+        if (useShakepayLots) {
+          for (const lot of shakepayBuyLots.filter(x=>x.date<=k)) {
+            const asset = (lot.asset||'BTC').toUpperCase();
+            ci += convertAmount(Number(lot.amount), String(lot.ccy||'CAD').toUpperCase(), quote, fxNow);
+            if (asset==='ETH') cEth += Number(lot.btc||0); else cBtc += Number(lot.btc||0);
+          }
+          cBtc = Math.max(0, cBtc - sellBtcUnits);
+          cEth = Math.max(0, cEth - sellEthUnits);
+        }
+
+        const pxB = priceForDate(maps['BTC'], d) || current;
+        const pxE = (maps['ETH'] ? (priceForDate(maps['ETH'], d) || currentEth || 0) : 0);
+        const cv = cBtc*pxB + cEth*pxE + (useShakepayLots ? sellProceeds : 0);
+        const cp = cv - ci;
+        const cr = ci ? (cp/ci)*100 : 0;
+        chartSeries.push({date:k, pnl:cp, roi:cr});
+      }
+    }
+
     $('status').innerHTML = `Done. Source: <b>${sourceLabel}</b>.`;
     render();
     $('result').innerHTML = `
@@ -760,7 +867,9 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">Total Dip ROI</div><b class="${dipRoi==null?'':(dipRoi>=0?'ok':'warn')}">${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
         <div class="card"><div class="small">Total Dip PnL</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
       </div>
-      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode === 'bteth' ? 'BTC+ETH' : 'BTC only'}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' '+quote) : 'off'}.</p>`;
+      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode === 'bteth' ? 'BTC+ETH' : 'BTC only'}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' '+quote) : 'off'}.</p>
+      ${buildRoiPnlChart(chartSeries)}
+      `;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
