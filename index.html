@@ -411,7 +411,10 @@ $('clearAll').onclick = () => {
   $('shakepayResult').innerHTML = '';
   $('flowResult').innerHTML = '';
   if ($('csvResult')) $('csvResult').innerHTML = '';
-  $('status').textContent = 'Cleared.';
+  if ($('shakepayFile')) $('shakepayFile').value = '';
+  localStorage.removeItem('btc.lastCurrentPriceCad');
+  localStorage.removeItem('btc.lastCurrentEthPriceCad');
+  $('status').textContent = 'Cleared everything (including Shakepay import details).';
   resetDipEditor();
   render();
 };
