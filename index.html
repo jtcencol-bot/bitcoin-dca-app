@@ -406,6 +406,9 @@ $('clearAll').onclick = () => {
   localStorage.removeItem('btc.dips');
   localStorage.removeItem('btc.shakepayBuyLots');
   localStorage.removeItem('btc.shakepayCsvText');
+  localStorage.removeItem('btc.sellBtcUnits');
+  localStorage.removeItem('btc.sellEthUnits');
+  localStorage.removeItem('btc.sellProceeds');
   shakepayBuyLots.splice(0, shakepayBuyLots.length);
   $('result').innerHTML = '';
   $('shakepayResult').innerHTML = '';
@@ -510,6 +513,9 @@ $('calc').onclick = async () => {
     const useShakepayLots = mode === 'shakepay' || mode === 'hybrid';
     let invested=0, btc=0, dcaInvested=0, dipInvested=0, skipped=0;
     let dcaBtc=0, dipBtc=0, shakepayBtc=0, shakepayInvested=0;
+    let sellProceeds = Number(localStorage.getItem('btc.sellProceeds') || 0);
+    let sellBtcUnits = Number(localStorage.getItem('btc.sellBtcUnits') || 0);
+    let sellEthUnits = Number(localStorage.getItem('btc.sellEthUnits') || 0);
     const assetStats = { BTC:{invested:0, qty:0}, ETH:{invested:0, qty:0} };
 
     if (useRules && rules.length) {
@@ -606,6 +612,13 @@ $('calc').onclick = async () => {
     if (!current) throw new Error('Could not get recent BTC price from source.');
     const currentEth = maps['ETH'] ? priceForDate(maps['ETH'], new Date()) : null;
     localStorage.setItem('btc.lastCurrentPriceCad', String(current));
+
+    if (useShakepayLots) {
+      assetStats.BTC.qty = Math.max(0, assetStats.BTC.qty - sellBtcUnits);
+      assetStats.ETH.qty = Math.max(0, assetStats.ETH.qty - sellEthUnits);
+    } else {
+      sellProceeds = 0;
+    }
 
     const value = (assetStats.BTC.qty * current) + (assetStats.ETH.qty * (currentEth || 0));
     const totalValue = value + sellProceeds;
@@ -781,11 +794,12 @@ $('analyzeShakepay').onclick = async () => {
     sentUnits = sentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
     sentBtcUnits = sentRows.filter(r => (r.assetDebited||'').toUpperCase()==='BTC').reduce((sum,r)=>sum+(r.amountDebited||0),0);
     sentEthUnits = sentRows.filter(r => (r.assetDebited||'').toUpperCase()==='ETH').reduce((sum,r)=>sum+(r.amountDebited||0),0);
-    assetStats.BTC.qty = Math.max(0, assetStats.BTC.qty - sellBtcUnits);
-    assetStats.ETH.qty = Math.max(0, assetStats.ETH.qty - sellEthUnits);
 
     shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
+    localStorage.setItem('btc.sellBtcUnits', String(sellBtcUnits));
+    localStorage.setItem('btc.sellEthUnits', String(sellEthUnits));
+    localStorage.setItem('btc.sellProceeds', String(sellProceeds));
 
     let rewardsFiatToday = null;
     try {
