@@ -336,6 +336,7 @@ $('calc').onclick = async () => {
 
     const useShakepayLots = $('useShakepayLots').checked;
     let invested=0, btc=0, dcaInvested=0, dipInvested=0, skipped=0;
+    let dcaBtc=0, dipBtc=0, shakepayBtc=0, shakepayInvested=0;
 
     if (rules.length) {
       const start = rules.map(r=>r.date).sort()[0];
@@ -345,7 +346,8 @@ $('calc').onclick = async () => {
         if (amount<=0) continue;
         const px = priceForDate(map, d);
         if (!px) { skipped++; continue; }
-        invested += amount; dcaInvested += amount; btc += amount/px;
+        const got = amount/px;
+        invested += amount; dcaInvested += amount; btc += got; dcaBtc += got;
       }
     }
 
@@ -362,6 +364,7 @@ $('calc').onclick = async () => {
       invested += Number(dip.amount);
       dipInvested += Number(dip.amount);
       btc += btcGot;
+      dipBtc += btcGot;
     }
 
     if (useShakepayLots && shakepayBuyLots.length) {
@@ -372,9 +375,12 @@ $('calc').onclick = async () => {
         if (dipKeys.has(key)) continue; // avoid double-count if same buy already imported as dip
         invested += Number(lot.amount);
         btc += Number(lot.btc || 0);
+        shakepayInvested += Number(lot.amount);
+        shakepayBtc += Number(lot.btc || 0);
         lotsIncluded++;
       }
       if (lotsIncluded) status.textContent = `Included ${lotsIncluded} Shakepay buy lot(s) from upload.`;
+      if (rules.length && lotsIncluded) status.textContent += ' Warning: DCA rules + imported buys may overlap (possible double count).';
     }
 
     if (!rules.length && !dips.length && !(useShakepayLots && shakepayBuyLots.length)) {
@@ -387,6 +393,14 @@ $('calc').onclick = async () => {
     const value = btc * current;
     const pnl = value - invested;
     const roi = invested ? (pnl/invested)*100 : 0;
+
+    const dcaValue = dcaBtc * current;
+    const dcaPnl = dcaValue - dcaInvested;
+    const dcaRoi = dcaInvested ? (dcaPnl / dcaInvested) * 100 : null;
+
+    const dipValue = dipBtc * current;
+    const dipPnl = dipValue - dipInvested;
+    const dipRoi = dipInvested ? (dipPnl / dipInvested) * 100 : null;
 
     $('status').innerHTML = `Done. Source: <b>${sourceLabel}</b>.`;
     $('result').innerHTML = `
@@ -402,7 +416,13 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">PnL (CAD)</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
         <div class="card"><div class="small">ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
       </div>
-      <p class="small" style="margin-top:10px">Skipped days/entries due to missing price data: ${skipped}.</p>`;
+      <div class="cards" style="margin-top:10px">
+        <div class="card"><div class="small">DCA ROI</div><b>${dcaRoi==null?'n/a':dcaRoi.toFixed(2)+'%'}</b></div>
+        <div class="card"><div class="small">DCA PnL (CAD)</div><b class="${dcaRoi==null?'':(dcaPnl>=0?'ok':'warn')}">${dcaRoi==null?'n/a':'$'+fmt(dcaPnl)}</b></div>
+        <div class="card"><div class="small">Dip ROI</div><b>${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
+        <div class="card"><div class="small">Dip PnL (CAD)</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
+      </div>
+      <p class="small" style="margin-top:10px">Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' CAD, '+shakepayBtc.toFixed(8)+' BTC') : 'off'}.</p>`;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
