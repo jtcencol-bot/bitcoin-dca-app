@@ -237,8 +237,10 @@ function applyMode(){
   $('rAssetWrap').style.display = bteth ? '' : 'none';
   if (!bteth) $('rAsset').value = 'BTC';
 }
-const savedMode = localStorage.getItem('btc.assetMode') || 'btc';
-const savedQuote = localStorage.getItem('btc.quoteMode') || 'CAD';
+const savedModeRaw = localStorage.getItem('btc.assetMode') || 'btc';
+const savedQuoteRaw = localStorage.getItem('btc.quoteMode') || 'CAD';
+const savedMode = ['btc','bteth'].includes(savedModeRaw) ? savedModeRaw : 'btc';
+const savedQuote = ['CAD','USD'].includes(savedQuoteRaw) ? savedQuoteRaw : 'CAD';
 (document.querySelector(`input[name="assetMode"][value="${savedMode}"]`) || document.querySelector('input[name="assetMode"][value="btc"]')).checked = true;
 (document.querySelector(`input[name="quoteMode"][value="${savedQuote}"]`) || document.querySelector('input[name="quoteMode"][value="CAD"]')).checked = true;
 applyMode();
@@ -345,22 +347,42 @@ function dcaAmountOnDate(dateStr, asset='BTC'){
 }
 
 async function fetchCC(tsym, limit=2000, fsym='BTC'){
-  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${fsym}&tsym=${tsym}&limit=${limit}`;
-  const res = await fetch(url);
+  const safeTsym = ['CAD','USD'].includes(String(tsym||'').toUpperCase()) ? String(tsym).toUpperCase() : 'CAD';
+  const safeFsym = ['BTC','ETH'].includes(String(fsym||'').toUpperCase()) ? String(fsym).toUpperCase() : 'BTC';
+  const safeLimit = Math.max(1, Math.min(Number(limit)||2000, 2000));
+  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${safeFsym}&tsym=${safeTsym}&limit=${safeLimit}`;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 12000);
+  let res;
+  try {
+    res = await fetch(url, { signal: ac.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Price API timeout');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(`Price API failed: ${res.status}`);
   const json = await res.json();
   if (json.Response !== 'Success') throw new Error(json.Message || 'Price API error');
+  if (!json?.Data?.Data || !Array.isArray(json.Data.Data)) throw new Error('Price API malformed response');
   return json.Data.Data;
 }
 
 function toDailyMapCC(rows, fx=1){
   const m = {};
+  const f = Number(fx);
+  const safeFx = Number.isFinite(f) && f > 0 ? f : 1;
   for (const r of rows) {
-    if (!r.time || !r.close) continue;
-    const k = new Date(r.time*1000).toISOString().slice(0,10);
-    // use OHLC average as approx daily average
-    const avg = ((Number(r.open)+Number(r.high)+Number(r.low)+Number(r.close))/4) * fx;
-    m[k] = avg;
+    const t = Number(r?.time);
+    const o = Number(r?.open), h = Number(r?.high), l = Number(r?.low), c = Number(r?.close);
+    if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) continue;
+    if (o <= 0 || h <= 0 || l <= 0 || c <= 0) continue;
+    if (h < l) continue;
+    const avgUsd = (o + h + l + c) / 4;
+    if (!Number.isFinite(avgUsd) || avgUsd <= 0 || avgUsd > 10_000_000) continue;
+    const k = new Date(t*1000).toISOString().slice(0,10);
+    m[k] = avgUsd * safeFx;
   }
   return m;
 }
