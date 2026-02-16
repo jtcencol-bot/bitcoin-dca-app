@@ -51,13 +51,14 @@
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
   <section class="panel">
-    <h2>DCA / Auto-Buy Rules (daily CAD)</h2>
-    <div class="grid g4">
+    <h2>DCA / Auto-Buy Rules (CAD)</h2>
+    <div class="grid g5">
       <div>
         <label>Start Date</label>
         <div class="dateWrap"><input id="rDate" type="date" value="2021-10-31"><button id="pickRDate" type="button">📅</button></div>
       </div>
-      <div><label>Daily Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
+      <div><label>Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
+      <div><label>Frequency</label><select id="rFreq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="monthly">Monthly</option></select></div>
       <div><label>&nbsp;</label><button id="addRule">Add / Update Rule</button></div>
       <div><label>&nbsp;</label><button id="clearRules">Clear Rules</button></div>
     </div>
@@ -96,7 +97,8 @@
       <button id="sortDipDate" class="chip" type="button">Date</button>
       <button id="sortDipBestRoi" class="chip" type="button">Best ROI</button>
       <button id="sortDipWorstRoi" class="chip" type="button">Worst ROI</button>
-      <button id="sortDipBiggestPnl" class="chip" type="button">Biggest PnL</button>
+      <button id="sortDipBiggestPnl" class="chip" type="button">Best PnL</button>
+      <button id="sortDipWorstPnl" class="chip" type="button">Worst PnL</button>
     </div>
     <div id="dipList" class="list" style="margin-top:10px"></div>
   </section>
@@ -169,6 +171,7 @@ $('sortDipDate').onclick = () => { dipSortMode = 'date'; render(); };
 $('sortDipBestRoi').onclick = () => { dipSortMode = 'bestRoi'; render(); };
 $('sortDipWorstRoi').onclick = () => { dipSortMode = 'worstRoi'; render(); };
 $('sortDipBiggestPnl').onclick = () => { dipSortMode = 'biggestPnl'; render(); };
+$('sortDipWorstPnl').onclick = () => { dipSortMode = 'worstPnl'; render(); };
 $('helpBtn').onclick = () => $('helpDialog').showModal();
 $('closeHelp').onclick = () => $('helpDialog').close();
 $('demoBtn').onclick = () => {
@@ -180,7 +183,7 @@ $('demoBtn').onclick = () => {
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
-  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${r.date}</b>: <b>$${fmt(r.amount)} CAD/day</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
+  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${r.date}</b>: <b>$${fmt(r.amount)} CAD/${r.freq||'daily'}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
   const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
   const metric = (d) => {
@@ -195,6 +198,7 @@ function render(){
   if (dipSortMode === 'bestRoi') dips.sort((a,b)=>metric(b).roi - metric(a).roi);
   if (dipSortMode === 'worstRoi') dips.sort((a,b)=>metric(a).roi - metric(b).roi);
   if (dipSortMode === 'biggestPnl') dips.sort((a,b)=>metric(b).pnl - metric(a).pnl);
+  if (dipSortMode === 'worstPnl') dips.sort((a,b)=>metric(a).pnl - metric(b).pnl);
 
   $('dipList').innerHTML = dips.map((d,i)=>{
     const btcQty = d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0));
@@ -225,9 +229,28 @@ window.editDip = i => {
   $('cancelDipEdit').style.display = '';
 };
 
-function dailyAmount(dateStr){
+function isRuleHit(rule, d){
+  const start = dateObj(rule.date);
+  if (d < start) return false;
+  const diffDays = Math.floor((d - start) / 86400000);
+  const freq = rule.freq || 'daily';
+  if (freq === 'daily') return true;
+  if (freq === 'weekly') return diffDays % 7 === 0;
+  if (freq === 'biweekly') return diffDays % 14 === 0;
+  if (freq === 'monthly') {
+    const sd = start.getDate();
+    const md = d.getDate();
+    const lastDay = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+    return md === sd || (sd > lastDay && md === lastDay);
+  }
+  return true;
+}
+
+function dcaAmountOnDate(dateStr){
+  const d = dateObj(dateStr);
   const applied = rules.filter(r=>r.date<=dateStr).sort((a,b)=>a.date.localeCompare(b.date)).pop();
-  return applied ? Number(applied.amount) : 0;
+  if (!applied) return 0;
+  return isRuleHit(applied, d) ? Number(applied.amount) : 0;
 }
 
 async function fetchCC(tsym, limit=2000){
@@ -262,10 +285,10 @@ function priceForDate(map, d){
 }
 
 $('addRule').onclick = () => {
-  const date = $('rDate').value; const amount = Number($('rAmt').value);
+  const date = $('rDate').value; const amount = Number($('rAmt').value); const freq = $('rFreq').value;
   if (!date || amount<=0) return alert('Need valid date + amount.');
   const i = rules.findIndex(r=>r.date===date);
-  if (i>=0) rules[i].amount = amount; else rules.push({date, amount});
+  if (i>=0) rules[i] = {date, amount, freq}; else rules.push({date, amount, freq});
   save(); render();
 };
 $('clearRules').onclick = () => { rules.splice(0, rules.length); save(); render(); };
@@ -275,7 +298,8 @@ $('normalizeRules').onclick = () => {
   const out = [];
   for (const r of rules) {
     const amt = Number(r.amount);
-    if (!out.length || Number(out[out.length-1].amount) !== amt) out.push({date:r.date, amount:amt});
+    const freq = r.freq || 'daily';
+    if (!out.length || Number(out[out.length-1].amount) !== amt || (out[out.length-1].freq||'daily') !== freq) out.push({date:r.date, amount:amt, freq});
   }
   rules.splice(0, rules.length, ...out);
   save(); render();
@@ -387,7 +411,7 @@ $('calc').onclick = async () => {
       const start = rules.map(r=>r.date).sort()[0];
       for (let d=dateObj(start), end=new Date(); d<=end; d.setDate(d.getDate()+1)) {
         const k = dayKey(d);
-        const amount = dailyAmount(k);
+        const amount = dcaAmountOnDate(k);
         if (amount<=0) continue;
         const px = priceForDate(map, d);
         if (!px) { skipped++; continue; }
@@ -559,7 +583,8 @@ $('analyzeShakepay').onclick = async () => {
       const btc = r.amountCredited || 0;
       const sats = Math.round(btc * SATS);
 
-      if (type === 'buy') {
+      const isCostBearingBtcAcquisition = (r.bookCost > 0) || ((type === 'buy' || type === 'convert' || type === 'other') && r.marketValue > 0);
+      if (isCostBearingBtcAcquisition) {
         const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
         const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
         if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0, price: price || null});
