@@ -222,8 +222,20 @@ const savedQuote = localStorage.getItem('btc.quoteMode') || 'CAD';
 (document.querySelector(`input[name="assetMode"][value="${savedMode}"]`) || document.querySelector('input[name="assetMode"][value="btc"]')).checked = true;
 (document.querySelector(`input[name="quoteMode"][value="${savedQuote}"]`) || document.querySelector('input[name="quoteMode"][value="CAD"]')).checked = true;
 applyMode();
-document.querySelectorAll('input[name="assetMode"]').forEach(el=>el.addEventListener('change', ()=>{ localStorage.setItem('btc.assetMode', getAssetMode()); applyMode(); }));
-document.querySelectorAll('input[name="quoteMode"]').forEach(el=>el.addEventListener('change', ()=>{ localStorage.setItem('btc.quoteMode', getQuoteMode()); applyMode(); }));
+document.querySelectorAll('input[name="assetMode"]').forEach(el=>el.addEventListener('change', async ()=>{
+  localStorage.setItem('btc.assetMode', getAssetMode());
+  applyMode();
+  if (($('shakepayFile').files && $('shakepayFile').files[0]) || localStorage.getItem('btc.shakepayCsvText')) {
+    try { await $('analyzeShakepay').onclick(); } catch {}
+  }
+}));
+document.querySelectorAll('input[name="quoteMode"]').forEach(el=>el.addEventListener('change', async ()=>{
+  localStorage.setItem('btc.quoteMode', getQuoteMode());
+  applyMode();
+  if (($('shakepayFile').files && $('shakepayFile').files[0]) || localStorage.getItem('btc.shakepayCsvText')) {
+    try { await $('analyzeShakepay').onclick(); } catch {}
+  }
+}));
 
 $('pickRDate').onclick = () => openPicker($('rDate'));
 $('pickDDate').onclick = () => openPicker($('dDate'));
@@ -379,6 +391,7 @@ $('clearAll').onclick = () => {
   localStorage.removeItem('btc.rules');
   localStorage.removeItem('btc.dips');
   localStorage.removeItem('btc.shakepayBuyLots');
+  localStorage.removeItem('btc.shakepayCsvText');
   shakepayBuyLots.splice(0, shakepayBuyLots.length);
   $('result').innerHTML = '';
   if ($('csvResult')) $('csvResult').innerHTML = '';
@@ -667,9 +680,11 @@ function normalizeShakepayRow(r){
 $('analyzeShakepay').onclick = async () => {
   try {
     const file = $('shakepayFile').files[0];
-    if (!file) throw new Error('Pick your Shakepay CSV first.');
-
-    const text = await file.text();
+    let text = '';
+    if (file) text = await file.text();
+    else text = localStorage.getItem('btc.shakepayCsvText') || '';
+    if (!text) throw new Error('Pick your Shakepay CSV first.');
+    localStorage.setItem('btc.shakepayCsvText', text);
     const rows = parseCsv(text).map(normalizeShakepayRow);
     if (!rows.length) throw new Error('No rows found in Shakepay file.');
 
