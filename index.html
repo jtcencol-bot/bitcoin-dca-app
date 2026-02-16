@@ -102,6 +102,9 @@
       <div><label>Fallback FX (USD→CAD)</label><input id="fx" type="number" min="0.5" step="0.0001" value="1.35"></div>
       <div><label>&nbsp;</label><button id="calc">Calculate Returns</button></div>
     </div>
+    <div class="actions" style="margin-top:10px">
+      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="useShakepayLots" type="checkbox" checked> Include imported Shakepay buys in calculation</label>
+    </div>
     <p id="status" class="small" style="margin-top:10px">Ready.</p>
     <div id="result" style="margin-top:10px"></div>
   </section>
@@ -131,6 +134,7 @@ const SATS = 100000000;
 const defaultRules = [];
 const rules = JSON.parse(localStorage.getItem('btc.rules') || 'null') || structuredClone(defaultRules);
 const dips = JSON.parse(localStorage.getItem('btc.dips') || '[]');
+const shakepayBuyLots = JSON.parse(localStorage.getItem('btc.shakepayBuyLots') || '[]');
 let editingDipIndex = null;
 
 const $ = id => document.getElementById(id);
@@ -239,6 +243,8 @@ $('clearAll').onclick = () => {
   dips.splice(0, dips.length);
   localStorage.removeItem('btc.rules');
   localStorage.removeItem('btc.dips');
+  localStorage.removeItem('btc.shakepayBuyLots');
+  shakepayBuyLots.splice(0, shakepayBuyLots.length);
   $('result').innerHTML = '';
   if ($('csvResult')) $('csvResult').innerHTML = '';
   $('status').textContent = 'Cleared.';
@@ -289,7 +295,6 @@ $('cancelDipEdit').onclick = () => resetDipEditor();
 $('clearDips').onclick = () => { dips.length = 0; save(); render(); resetDipEditor(); };
 
 $('calc').onclick = async () => {
-  if (!rules.length) return alert('Add at least one DCA rule.');
   const status = $('status');
   status.textContent = 'Fetching BTC history…';
 
@@ -309,16 +314,19 @@ $('calc').onclick = async () => {
       sourceLabel = `CryptoCompare BTC/USD × FX ${fx}`;
     }
 
-    const start = rules.map(r=>r.date).sort()[0];
+    const useShakepayLots = $('useShakepayLots').checked;
     let invested=0, btc=0, dcaInvested=0, dipInvested=0, skipped=0;
 
-    for (let d=dateObj(start), end=new Date(); d<=end; d.setDate(d.getDate()+1)) {
-      const k = dayKey(d);
-      const amount = dailyAmount(k);
-      if (amount<=0) continue;
-      const px = priceForDate(map, d);
-      if (!px) { skipped++; continue; }
-      invested += amount; dcaInvested += amount; btc += amount/px;
+    if (rules.length) {
+      const start = rules.map(r=>r.date).sort()[0];
+      for (let d=dateObj(start), end=new Date(); d<=end; d.setDate(d.getDate()+1)) {
+        const k = dayKey(d);
+        const amount = dailyAmount(k);
+        if (amount<=0) continue;
+        const px = priceForDate(map, d);
+        if (!px) { skipped++; continue; }
+        invested += amount; dcaInvested += amount; btc += amount/px;
+      }
     }
 
     for (const dip of dips) {
@@ -334,6 +342,23 @@ $('calc').onclick = async () => {
       invested += Number(dip.amount);
       dipInvested += Number(dip.amount);
       btc += btcGot;
+    }
+
+    if (useShakepayLots && shakepayBuyLots.length) {
+      const dipKeys = new Set(dips.map(d => `${d.date}|${Number(d.amount).toFixed(2)}|${(Number(d.btc||0)).toFixed(8)}`));
+      let lotsIncluded = 0;
+      for (const lot of shakepayBuyLots) {
+        const key = `${lot.date}|${Number(lot.amount).toFixed(2)}|${(Number(lot.btc||0)).toFixed(8)}`;
+        if (dipKeys.has(key)) continue; // avoid double-count if same buy already imported as dip
+        invested += Number(lot.amount);
+        btc += Number(lot.btc || 0);
+        lotsIncluded++;
+      }
+      if (lotsIncluded) status.textContent = `Included ${lotsIncluded} Shakepay buy lot(s) from upload.`;
+    }
+
+    if (!rules.length && !dips.length && !(useShakepayLots && shakepayBuyLots.length)) {
+      throw new Error('No inputs to calculate. Add rules/dips or import Shakepay and enable imported buys.');
     }
 
     const current = priceForDate(map, new Date());
@@ -431,6 +456,7 @@ $('analyzeShakepay').onclick = async () => {
     let importedBuys = 0;
     let buyCad = 0;
     let buyBtc = 0;
+    const parsedBuyLots = [];
     let rewardBtc = 0;
     let recvBtc = 0;
     let sentBtc = 0;
@@ -450,6 +476,7 @@ $('analyzeShakepay').onclick = async () => {
       if (type === 'buy') {
         const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
         const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
+        if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0});
         if (importAsDips && date && amount >= dipMinCad) {
           dips.push({date, amount, price, btc: btc || null, sats: null});
           importedBuys++;
@@ -467,6 +494,9 @@ $('analyzeShakepay').onclick = async () => {
     }
 
     sentBtc = btcSentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
+
+    shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
+    localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
 
     let rewardsCadToday = null;
     try {
