@@ -42,7 +42,7 @@
 
   <section class="panel">
     <h2>Shakepay Import (recommended first step)</h2>
-    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app imports BTC buys, analyzes rewards, and shows BTC flow. ETH rows are ignored for now (future versions can include ETH). If you do not use Shakepay, enter your information manually below.</p>
+    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app imports BTC buys, analyzes rewards, and shows BTC flow. ETH rows are ignored for now (future versions can include ETH). If you do not use Shakepay, enter your information manually below. Data is processed in-browser and saved only to this browser profile.</p>
     <div class="grid g3">
       <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
       <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze Shakepay</button></div>
@@ -152,9 +152,18 @@
 <script>
 const SATS = 100000000;
 const defaultRules = [];
-const rules = JSON.parse(localStorage.getItem('btc.rules') || 'null') || structuredClone(defaultRules);
-const dips = JSON.parse(localStorage.getItem('btc.dips') || '[]');
-const shakepayBuyLots = JSON.parse(localStorage.getItem('btc.shakepayBuyLots') || '[]');
+const rules = (JSON.parse(localStorage.getItem('btc.rules') || 'null') || structuredClone(defaultRules))
+  .filter(r => r && typeof r === 'object')
+  .map(r => ({date: String(r.date || '').slice(0,10), amount: Number(r.amount||0), freq: String(r.freq||'daily')}))
+  .filter(r => r.date && r.amount > 0);
+const dips = (JSON.parse(localStorage.getItem('btc.dips') || '[]') || [])
+  .filter(d => d && typeof d === 'object')
+  .map(d => ({date: String(d.date || '').slice(0,10), amount: Number(d.amount||0), price: d.price==null?null:Number(d.price), btc: d.btc==null?null:Number(d.btc), sats: d.sats==null?null:Number(d.sats)}))
+  .filter(d => d.date && d.amount > 0);
+const shakepayBuyLots = (JSON.parse(localStorage.getItem('btc.shakepayBuyLots') || '[]') || [])
+  .filter(l => l && typeof l === 'object')
+  .map(l => ({date: String(l.date || '').slice(0,10), amount: Number(l.amount||0), btc: Number(l.btc||0), price: l.price==null?null:Number(l.price)}))
+  .filter(l => l.date && l.amount > 0);
 let editingDipIndex = null;
 let dipSortMode = 'date';
 
@@ -163,6 +172,12 @@ const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
 const dayKey = d => new Date(d).toISOString().slice(0,10);
 const dateObj = ymd => new Date(ymd+'T00:00:00');
 const save = () => { localStorage.setItem('btc.rules', JSON.stringify(rules)); localStorage.setItem('btc.dips', JSON.stringify(dips)); };
+const esc = (s='') => String(s)
+  .replace(/&/g,'&amp;')
+  .replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;')
+  .replace(/'/g,'&#39;');
 
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
 $('pickRDate').onclick = () => openPicker($('rDate'));
@@ -183,7 +198,7 @@ $('demoBtn').onclick = () => {
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
-  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${r.date}</b>: <b>$${fmt(r.amount)} CAD/${r.freq||'daily'}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
+  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${esc(r.date)}</b>: <b>$${fmt(r.amount)} CAD/${esc(r.freq||'daily')}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
   const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
   const metric = (d) => {
@@ -210,7 +225,7 @@ function render(){
       const roi = Number(d.amount) > 0 ? (pnl / Number(d.amount)) * 100 : 0;
       perf = ` <span class="small">| PnL: <b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b> | ROI: <b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></span>`;
     }
-    return `<div class="item">${d.date}: <b>$${fmt(d.amount)} CAD</b> — ${detail}${perf}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
+    return `<div class="item">${esc(d.date)}: <b>$${fmt(d.amount)} CAD</b> — ${esc(detail)}${perf}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
   }).join('') || '<p class="small">No dip buys.</p>';
 }
 window.delRule = i => { rules.splice(i,1); save(); render(); };
@@ -619,13 +634,13 @@ $('analyzeShakepay').onclick = async () => {
 
     const rewardRows = Object.entries(rewardByDesc)
       .sort((a,b)=>b[1]-a[1])
-      .map(([k,v])=>`<tr><td>${k}</td><td>${Number(v).toLocaleString()}</td><td>${(v/SATS).toFixed(8)} BTC</td></tr>`)
+      .map(([k,v])=>`<tr><td>${esc(k)}</td><td>${Number(v).toLocaleString()}</td><td>${(v/SATS).toFixed(8)} BTC</td></tr>`)
       .join('');
 
     $('shakepayResult').innerHTML = `
       <p class="ok"><b>Shakepay import complete.</b></p>
       <div class="cards" style="margin-top:8px">
-        <div class="card"><div class="small">Date range (BTC rows)</div><b>${start} → ${end}</b></div>
+        <div class="card"><div class="small">Date range (BTC rows)</div><b>${esc(start)} → ${esc(end)}</b></div>
         <div class="card"><div class="small">BTC buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
         <div class="card"><div class="small">Total BTC buy CAD (all buys)</div><b>$${fmt(buyCad)}</b></div>
         <div class="card"><div class="small">Total BTC bought (all buys)</div><b>${buyBtc.toFixed(8)} BTC</b></div>
@@ -650,7 +665,7 @@ $('analyzeShakepay').onclick = async () => {
       <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
     `;
   } catch (e) {
-    $('shakepayResult').innerHTML = `<p class="small warn">${e.message}</p>`;
+    $('shakepayResult').innerHTML = `<p class="small warn">${esc(e.message)}</p>`;
     $('flowResult').innerHTML = '';
   }
 };
