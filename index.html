@@ -169,10 +169,20 @@ function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
   $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${r.date}</b>: <b>$${fmt(r.amount)} CAD/day</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
+  const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
+
   dips.sort((a,b)=>a.date.localeCompare(b.date));
   $('dipList').innerHTML = dips.map((d,i)=>{
+    const btcQty = d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0));
     const detail = d.btc ? `${d.btc.toFixed(8)} BTC` : (d.sats ? `${Number(d.sats).toLocaleString()} sats` : (d.price ? `at $${fmt(d.price)} CAD/BTC` : 'uses market daily avg'));
-    return `<div class="item">${d.date}: <b>$${fmt(d.amount)} CAD</b> — ${detail}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
+    let perf = '';
+    if (lastPrice > 0 && btcQty > 0) {
+      const valNow = btcQty * lastPrice;
+      const pnl = valNow - Number(d.amount);
+      const roi = Number(d.amount) > 0 ? (pnl / Number(d.amount)) * 100 : 0;
+      perf = ` <span class="small">| PnL: <b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b> | ROI: <b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></span>`;
+    }
+    return `<div class="item">${d.date}: <b>$${fmt(d.amount)} CAD</b> — ${detail}${perf}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
   }).join('') || '<p class="small">No dip buys.</p>';
 }
 window.delRule = i => { rules.splice(i,1); save(); render(); };
@@ -408,6 +418,7 @@ $('calc').onclick = async () => {
 
     const current = priceForDate(map, new Date());
     if (!current) throw new Error('Could not get recent BTC price from source.');
+    localStorage.setItem('btc.lastCurrentPriceCad', String(current));
 
     const value = btc * current;
     const pnl = value - invested;
@@ -422,6 +433,7 @@ $('calc').onclick = async () => {
     const dipRoi = dipInvested ? (dipPnl / dipInvested) * 100 : null;
 
     $('status').innerHTML = `Done. Source: <b>${sourceLabel}</b>.`;
+    render();
     $('result').innerHTML = `
       <div class="cards">
         <div class="card"><div class="small">Total Invested (CAD)</div><b>$${fmt(invested)}</b></div>
