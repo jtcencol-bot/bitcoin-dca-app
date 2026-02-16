@@ -583,20 +583,22 @@ $('analyzeShakepay').onclick = async () => {
       const btc = r.amountCredited || 0;
       const sats = Math.round(btc * SATS);
 
-      const isCostBearingBtcAcquisition = (r.bookCost > 0) || ((type === 'buy' || type === 'convert' || type === 'other') && r.marketValue > 0);
-      if (isCostBearingBtcAcquisition) {
-        const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
-        const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
-        if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0, price: price || null});
-        if (amount > 0) {
-          buyCad += amount;
-          buyBtc += btc;
-        }
-      } else if (type === 'reward') {
+      if (type === 'reward') {
         rewardBtc += btc;
         rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + sats;
       } else if (type === 'receive') {
         recvBtc += btc;
+      } else {
+        const isCostBearingBtcAcquisition = (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
+        if (isCostBearingBtcAcquisition) {
+          const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
+          const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
+          if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0, price: price || null});
+          if (amount > 0) {
+            buyCad += amount;
+            buyBtc += btc;
+          }
+        }
       }
     }
 
