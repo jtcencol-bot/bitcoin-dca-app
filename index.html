@@ -44,17 +44,17 @@
     <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app imports BTC buys, analyzes rewards, and shows BTC flow. ETH rows are ignored for now (future versions can include ETH). If you do not use Shakepay, enter your information manually below.</p>
     <div class="grid g3">
       <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
-      <div><label>Min CAD to import as Dip Buy</label><input id="dipMinCad" type="number" min="0" step="1" value="250"></div>
-      <div><label>Max daily CAD considered DCA</label><input id="dcaMaxCad" type="number" min="1" step="1" value="100"></div>
+      <div><label>Min CAD to import as Dip Buy (optional)</label><input id="dipMinCad" type="number" min="0" step="1" value="250"></div>
+      <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze Shakepay</button></div>
     </div>
     <div class="actions" style="margin-top:10px">
-      <button id="analyzeShakepay" type="button">Analyze + Import</button>
-      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="autoDcaRules" type="checkbox" checked> Auto-detect DCA rules from recurring daily buys</label>
+      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="importAsDips" type="checkbox"> Import qualifying BTC buys as Dip Buys</label>
+      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="replaceDipsOnImport" type="checkbox" checked> Replace existing Dip Buys on import</label>
     </div>
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
   <section class="panel">
-    <h2>DCA Rules (daily CAD)</h2>
+    <h2>DCA / Auto-Buy Rules (daily CAD)</h2>
     <div class="grid g4">
       <div>
         <label>Start Date</label>
@@ -391,32 +391,6 @@ function normalizeShakepayRow(r){
   };
 }
 
-function detectDcaRulesFromBuys(btcRows, maxDailyCad){
-  const daily = {};
-  for (const r of btcRows) {
-    if (r.type.toLowerCase() !== 'buy') continue;
-    const date = (r.date||'').slice(0,10);
-    const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
-    if (!date || !(amount>0)) continue;
-    daily[date] = (daily[date] || 0) + amount;
-  }
-  const days = Object.keys(daily).sort().map(d => ({date:d, amount:Math.round(daily[d]*100)/100}));
-  const candidates = days.filter(x => x.amount <= maxDailyCad);
-  if (!candidates.length) return [];
-
-  const segments = [];
-  let curr = null;
-  for (const d of candidates) {
-    if (!curr || curr.amount !== d.amount) {
-      if (curr) segments.push(curr);
-      curr = {startDate:d.date, amount:d.amount, days:1};
-    } else curr.days++;
-  }
-  if (curr) segments.push(curr);
-
-  return segments.filter(s => s.days >= 7).map(s => ({date:s.startDate, amount:s.amount}));
-}
-
 $('analyzeShakepay').onclick = async () => {
   try {
     const file = $('shakepayFile').files[0];
@@ -427,8 +401,8 @@ $('analyzeShakepay').onclick = async () => {
     if (!rows.length) throw new Error('No rows found in Shakepay file.');
 
     const dipMinCad = Number($('dipMinCad').value || 250);
-    const dcaMaxCad = Number($('dcaMaxCad').value || 100);
-    const autoDca = $('autoDcaRules').checked;
+    const importAsDips = $('importAsDips').checked;
+    const replaceDipsOnImport = $('replaceDipsOnImport').checked;
 
     const btcRows = rows.filter(r => r.assetCredited === 'BTC');
     if (!btcRows.length) throw new Error('No BTC rows found.');
@@ -448,9 +422,8 @@ $('analyzeShakepay').onclick = async () => {
 
     const rewardByDesc = {};
 
-    const dcaRulesDetected = autoDca ? detectDcaRulesFromBuys(btcRows, dcaMaxCad) : [];
-    if (autoDca && dcaRulesDetected.length) {
-      rules.splice(0, rules.length, ...dcaRulesDetected);
+    if (importAsDips && replaceDipsOnImport) {
+      dips.splice(0, dips.length);
     }
 
     for (const r of btcRows) {
@@ -462,7 +435,7 @@ $('analyzeShakepay').onclick = async () => {
       if (type === 'buy') {
         const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
         const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
-        if (date && amount >= dipMinCad) {
+        if (importAsDips && date && amount >= dipMinCad) {
           dips.push({date, amount, price, btc: btc || null, sats: null});
           importedBuys++;
         }
@@ -499,7 +472,7 @@ $('analyzeShakepay').onclick = async () => {
       <p class="ok"><b>Shakepay import complete.</b></p>
       <div class="cards" style="margin-top:8px">
         <div class="card"><div class="small">Date range (BTC rows)</div><b>${start} → ${end}</b></div>
-        <div class="card"><div class="small">BTC buy rows imported as dips (≥ $${fmt(dipMinCad)})</div><b>${importedBuys}</b></div>
+        <div class="card"><div class="small">BTC buy rows imported as dips ${importAsDips ? `(≥ $${fmt(dipMinCad)})` : '(import off)'}</div><b>${importedBuys}</b></div>
         <div class="card"><div class="small">Total BTC buy CAD (all buys)</div><b>$${fmt(buyCad)}</b></div>
         <div class="card"><div class="small">Total BTC bought (all buys)</div><b>${buyBtc.toFixed(8)} BTC</b></div>
       </div>
@@ -508,7 +481,7 @@ $('analyzeShakepay').onclick = async () => {
         <p><b>Total rewards:</b> ${rewardBtc.toFixed(8)} BTC (${Math.round(rewardBtc*SATS).toLocaleString()} sats)${rewardsCadToday!=null ? ` ≈ <b>$${fmt(rewardsCadToday)} CAD</b> today` : ''}</p>
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
-      <p class="small" style="margin-top:8px">${autoDca ? (dcaRulesDetected.length ? `Detected ${dcaRulesDetected.length} DCA rule change(s) from recurring buys (<= $${fmt(dcaMaxCad)}/day).` : `No clear DCA pattern detected under $${fmt(dcaMaxCad)}/day.`) : 'Auto-detect DCA is off.'}</p>
+      <p class="small" style="margin-top:8px">Tip: keep DCA rules manual for accuracy; use Shakepay import mainly for analysis and rewards.</p>
     `;
 
     const netFlow = buyBtc + rewardBtc + recvBtc - sentBtc;
