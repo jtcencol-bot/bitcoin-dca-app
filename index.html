@@ -42,8 +42,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       <label class="small" style="display:flex;align-items:center;gap:6px"><input type="radio" name="quoteMode" value="CAD" checked> CAD</label>
       <label class="small" style="display:flex;align-items:center;gap:6px"><input type="radio" name="quoteMode" value="USD"> USD</label>
       <button id="helpBtn" type="button">Help</button>
-      <button id="demoBtn" type="button">Load Demo Data</button>
-      <button id="clearAll" type="button" style="background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
+            <button id="clearAll" type="button" style="background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
     </div>
   </div>
 
@@ -158,12 +157,14 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
 <dialog id="helpDialog">
   <h3>Quick Guide</h3>
   <ol>
-    <li><b>If you use Shakepay</b>, upload your summary first (it can auto-detect DCA rules and import only larger buys as dips).</li>
-    <li><b>Add/Edit DCA rules</b>: each rule sets the total daily CAD amount from that date onward.</li>
-    <li><b>Add/Edit dip buys</b> (optional): use market price, book price, or exact BTC/sats received.</li>
-    <li><b>Calculate Returns</b> to fetch history and estimate BTC, value, and ROI.</li>
+    <li><b>Pick mode first:</b> Bitcoin-only or BTC+ETH, then CAD or USD quote.</li>
+    <li><b>If you use Shakepay:</b> upload <code>crypto_transactions_summary.csv</code> and click Analyze. The app auto-updates returns.</li>
+    <li><b>DCA rules:</b> add amount + frequency + asset (asset shown in BTC+ETH mode).</li>
+    <li><b>Dip buys:</b> add/edit manual dips, or extract BTC dips from uploaded Shakepay by threshold.</li>
+    <li><b>Sell-aware model:</b> sales are included in overall totals as simple proceeds/units adjustments. Exact realized PnL is approximate without FIFO/LIFO lot accounting and full transfer history.</li>
+    <li><b>Use Update Calculated Returns</b> after changing rules/dips/import settings.</li>
   </ol>
-  <p class="small">Privacy: your data is stored in your browser (localStorage). Use <b>Clear All</b> to wipe it.</p>
+  <p class="small">Privacy: data is processed client-side and stored in this browser profile (localStorage). Clear All wipes local state.</p>
   <div class="actions"><button id="closeHelp" type="button">Close</button></div>
 </dialog>
 
@@ -265,12 +266,6 @@ $('sortDipBiggestPnl').onclick = () => { dipSortMode = 'biggestPnl'; render(); }
 $('sortDipWorstPnl').onclick = () => { dipSortMode = 'worstPnl'; render(); };
 $('helpBtn').onclick = () => $('helpDialog').showModal();
 $('closeHelp').onclick = () => $('helpDialog').close();
-$('demoBtn').onclick = () => {
-  rules.splice(0, rules.length, {date:'2024-01-01', amount:5}, {date:'2025-01-01', amount:10});
-  dips.splice(0, dips.length, {date:'2025-08-05', amount:500, price:78000, btc:null, sats:null});
-  save(); render();
-  $('status').textContent = 'Loaded demo data.';
-};
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
@@ -413,6 +408,8 @@ $('clearAll').onclick = () => {
   localStorage.removeItem('btc.shakepayCsvText');
   shakepayBuyLots.splice(0, shakepayBuyLots.length);
   $('result').innerHTML = '';
+  $('shakepayResult').innerHTML = '';
+  $('flowResult').innerHTML = '';
   if ($('csvResult')) $('csvResult').innerHTML = '';
   $('status').textContent = 'Cleared.';
   resetDipEditor();
@@ -608,7 +605,8 @@ $('calc').onclick = async () => {
     localStorage.setItem('btc.lastCurrentPriceCad', String(current));
 
     const value = (assetStats.BTC.qty * current) + (assetStats.ETH.qty * (currentEth || 0));
-    const pnl = value - invested;
+    const totalValue = value + sellProceeds;
+    const pnl = totalValue - invested;
     const roi = invested ? (pnl/invested)*100 : 0;
 
     const dcaValue = dcaBtc * current;
@@ -631,7 +629,8 @@ $('calc').onclick = async () => {
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">Current BTC Price</div><b>$${fmt(current)}</b></div>
         ${assetMode === 'bteth' ? `<div class="card"><div class="small">Current ETH Price</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>` : ''}
-        <div class="card"><div class="small">Portfolio Value</div><b>$${fmt(value)}</b></div>
+        <div class="card"><div class="small">Portfolio Value (current holdings)</div><b>$${fmt(value)}</b></div>
+        <div class="card"><div class="small">Realized Sell Proceeds</div><b>$${fmt(sellProceeds)}</b></div>
         <div class="card"><div class="small">Total PnL</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
@@ -731,6 +730,7 @@ $('analyzeShakepay').onclick = async () => {
     let sentUnits = 0;
     let recvBtcUnits = 0, recvEthUnits = 0;
     let sentBtcUnits = 0, sentEthUnits = 0;
+    let sellBtcUnits = 0, sellEthUnits = 0, sellProceeds = 0;
 
     const rewardByDesc = {};
 
@@ -750,6 +750,13 @@ $('analyzeShakepay').onclick = async () => {
         recvUnits += qty;
         if ((r.assetCredited||'').toUpperCase() === 'BTC') recvBtcUnits += qty;
         if ((r.assetCredited||'').toUpperCase() === 'ETH') recvEthUnits += qty;
+      } else if (type === 'sell') {
+        const proceeds = r.bookCost > 0 ? r.bookCost : r.marketValue;
+        const proceedsCcy = (r.bookCostCurrency || r.marketValueCurrency || 'CAD').toUpperCase();
+        const proceedsInQuote = convertAmount(proceeds, proceedsCcy, quote, Number($('fx').value||1.35));
+        sellProceeds += proceedsInQuote;
+        if ((r.assetCredited||'').toUpperCase()==='BTC') sellBtcUnits += qty;
+        if ((r.assetCredited||'').toUpperCase()==='ETH') sellEthUnits += qty;
       } else {
         const isCostBearingBtcAcquisition = (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
         if (isCostBearingBtcAcquisition) {
@@ -771,6 +778,8 @@ $('analyzeShakepay').onclick = async () => {
     sentUnits = sentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
     sentBtcUnits = sentRows.filter(r => (r.assetDebited||'').toUpperCase()==='BTC').reduce((sum,r)=>sum+(r.amountDebited||0),0);
     sentEthUnits = sentRows.filter(r => (r.assetDebited||'').toUpperCase()==='ETH').reduce((sum,r)=>sum+(r.amountDebited||0),0);
+    assetStats.BTC.qty = Math.max(0, assetStats.BTC.qty - sellBtcUnits);
+    assetStats.ETH.qty = Math.max(0, assetStats.ETH.qty - sellEthUnits);
 
     shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
@@ -808,18 +817,19 @@ $('analyzeShakepay').onclick = async () => {
       </div>
     `;
 
-    const netBtcFlow = buyBtcUnits + rewardBtcUnits + recvBtcUnits - sentBtcUnits;
-    const netEthFlow = buyEthUnits + recvEthUnits - sentEthUnits;
+    const netBtcFlow = buyBtcUnits + rewardBtcUnits + recvBtcUnits - sentBtcUnits - sellBtcUnits;
+    const netEthFlow = buyEthUnits + recvEthUnits - sentEthUnits - sellEthUnits;
     $('flowResult').innerHTML = `
       <div class="cards">
         <div class="card"><div class="small">BTC Bought</div><b>${buyBtcUnits.toFixed(8)} BTC</b></div>
         <div class="card"><div class="small">BTC Rewards</div><b>${rewardBtcUnits.toFixed(8)} BTC</b></div>
         <div class="card"><div class="small">BTC Received</div><b>${recvBtcUnits.toFixed(8)} BTC</b></div>
         <div class="card"><div class="small">BTC Sent</div><b>${sentBtcUnits.toFixed(8)} BTC</b></div>
+        <div class="card"><div class="small">BTC Sold</div><b>${sellBtcUnits.toFixed(8)} BTC</b></div>
       </div>
       <div class="card" style="margin-top:10px"><div class="small">Net BTC Flow</div><b>${netBtcFlow.toFixed(8)} BTC</b></div>
-      ${mode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">ETH Bought</div><b>${buyEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Received</div><b>${recvEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sent</div><b>${sentEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">Net ETH Flow</div><b>${netEthFlow.toFixed(8)} ETH</b></div></div>` : ''}
-      <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
+      ${mode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">ETH Bought</div><b>${buyEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Received</div><b>${recvEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sent</div><b>${sentEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sold</div><b>${sellEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">Net ETH Flow</div><b>${netEthFlow.toFixed(8)} ETH</b></div></div>` : ''}
+      <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date. Sale PnL uses a simplified model (sale proceeds only); exact realized gains depend on lot method (FIFO/LIFO/HIFO) and off-exchange transfers.</p>
     `;
 
     // Auto-calculate once right after successful import/analyze
