@@ -726,8 +726,8 @@ $('analyzeShakepay').onclick = async () => {
     const quote = getQuoteMode();
     const assets = mode === 'bteth' ? ['BTC','ETH'] : ['BTC'];
 
-    const assetRows = rows.filter(r => assets.includes(r.assetCredited));
-    if (!assetRows.length) throw new Error(`No ${assets.join('/')} rows found.`);
+    const assetRows = rows.filter(r => assets.includes(r.assetCredited) || assets.includes(r.assetDebited));
+    if (!assetRows.length) throw new Error(`No ${assets.join('/')} activity rows found.`);
 
     const sentRows = rows.filter(r => assets.includes(r.assetDebited));
 
@@ -770,11 +770,13 @@ $('analyzeShakepay').onclick = async () => {
         const proceeds = r.bookCost > 0 ? r.bookCost : r.marketValue;
         const proceedsCcy = (r.bookCostCurrency || r.marketValueCurrency || 'CAD').toUpperCase();
         const proceedsInQuote = convertAmount(proceeds, proceedsCcy, quote, Number($('fx').value||1.35));
+        const soldAsset = (r.assetDebited || '').toUpperCase();
+        const soldQty = r.amountDebited || 0;
         sellProceeds += proceedsInQuote;
-        if ((r.assetCredited||'').toUpperCase()==='BTC') sellBtcUnits += qty;
-        if ((r.assetCredited||'').toUpperCase()==='ETH') sellEthUnits += qty;
+        if (soldAsset === 'BTC') sellBtcUnits += soldQty;
+        if (soldAsset === 'ETH') sellEthUnits += soldQty;
       } else {
-        const isCostBearingBtcAcquisition = (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
+        const isCostBearingBtcAcquisition = assets.includes((r.assetCredited || '').toUpperCase()) && (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
         if (isCostBearingBtcAcquisition) {
           const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
           const amountCcy = (r.bookCostCurrency || r.marketValueCurrency || 'CAD').toUpperCase();
