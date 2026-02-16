@@ -591,31 +591,31 @@ $('calc').onclick = async () => {
     render();
     $('result').innerHTML = `
       <div class="cards">
-        <div class="card"><div class="small">Total Invested (${quote})</div><b>$${fmt(invested)}</b></div>
-        <div class="card"><div class="small">From DCA (${quote})</div><b>$${fmt(dcaInvested)}</b></div>
-        <div class="card"><div class="small">From Dip Buys (${quote})</div><b>$${fmt(dipInvested)}</b></div>
+        <div class="card"><div class="small">Total Invested</div><b>$${fmt(invested)}</b></div>
+        <div class="card"><div class="small">From DCA</div><b>$${fmt(dcaInvested)}</b></div>
+        <div class="card"><div class="small">From Dip Buys</div><b>$${fmt(dipInvested)}</b></div>
         <div class="card"><div class="small">Estimated BTC</div><b>${assetStats.BTC.qty.toFixed(8)} BTC</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
-        <div class="card"><div class="small">Current BTC Price (${quote})</div><b>$${fmt(current)}</b></div>
-        <div class="card"><div class="small">Current ETH Price (${quote})</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>
-        <div class="card"><div class="small">Portfolio Value (${quote})</div><b>$${fmt(value)}</b></div>
-        <div class="card"><div class="small">PnL (${quote})</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
+        <div class="card"><div class="small">Current BTC Price</div><b>$${fmt(current)}</b></div>
+        <div class="card"><div class="small">Current ETH Price</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>
+        <div class="card"><div class="small">Portfolio Value</div><b>$${fmt(value)}</b></div>
+        <div class="card"><div class="small">Total PnL</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
-        <div class="card"><div class="small">ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
-        <div class="card"><div class="small">BTC ROI (all BTC sources)</div><b class="${assetStats.BTC.invested?((((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100)>=0)?'ok':'warn'):''}">${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
-        <div class="card"><div class="small">BTC PnL (${quote})</div><b class="${((assetStats.BTC.qty*current-assetStats.BTC.invested)>=0)?'ok':'warn'}">${assetStats.BTC.invested?('$'+fmt(assetStats.BTC.qty*current-assetStats.BTC.invested)):'n/a'}</b></div>
-        <div class="card"><div class="small">ETH ROI (all ETH sources)</div><b class="${(assetStats.ETH.invested&&currentEth)?((((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100)>=0)?'ok':'warn'):''}">${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        <div class="card"><div class="small">Total ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
+        <div class="card"><div class="small">Total BTC ROI</div><b class="${assetStats.BTC.invested?((((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100)>=0)?'ok':'warn'):''}">${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        <div class="card"><div class="small">Total BTC PnL</div><b class="${((assetStats.BTC.qty*current-assetStats.BTC.invested)>=0)?'ok':'warn'}">${assetStats.BTC.invested?('$'+fmt(assetStats.BTC.qty*current-assetStats.BTC.invested)):'n/a'}</b></div>
+        <div class="card"><div class="small">Total ETH ROI</div><b class="${(assetStats.ETH.invested&&currentEth)?((((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100)>=0)?'ok':'warn'):''}">${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
-        <div class="card"><div class="small">ETH PnL (${quote})</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
+        <div class="card"><div class="small">Total ETH PnL</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
-        <div class="card"><div class="small">DCA ROI</div><b>${dcaRoi==null?'n/a':dcaRoi.toFixed(2)+'%'}</b></div>
-        <div class="card"><div class="small">DCA PnL (${quote})</div><b class="${dcaRoi==null?'':(dcaPnl>=0?'ok':'warn')}">${dcaRoi==null?'n/a':'$'+fmt(dcaPnl)}</b></div>
-        <div class="card"><div class="small">Dip ROI</div><b>${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
-        <div class="card"><div class="small">Dip PnL (${quote})</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
+        <div class="card"><div class="small">Total DCA ROI</div><b class="${dcaRoi==null?'':(dcaRoi>=0?'ok':'warn')}">${dcaRoi==null?'n/a':dcaRoi.toFixed(2)+'%'}</b></div>
+        <div class="card"><div class="small">Total DCA PnL</div><b class="${dcaRoi==null?'':(dcaPnl>=0?'ok':'warn')}">${dcaRoi==null?'n/a':'$'+fmt(dcaPnl)}</b></div>
+        <div class="card"><div class="small">Total Dip ROI</div><b class="${dipRoi==null?'':(dipRoi>=0?'ok':'warn')}">${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
+        <div class="card"><div class="small">Total Dip PnL</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
       </div>
       <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode === 'bteth' ? 'BTC+ETH' : 'BTC only'}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' '+quote) : 'off'}.</p>`;
   } catch (e) {
