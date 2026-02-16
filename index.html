@@ -14,7 +14,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     input,button,select{width:100%;padding:10px;border-radius:10px;border:1px solid #3a4670;background:#0f1630;color:var(--text)}
     button{background:#22305c;cursor:pointer;font-weight:700} .grid{display:grid;gap:10px}
     h1{color:var(--accent)}
-    .g5{grid-template-columns:repeat(5,1fr)} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
+    .g6{grid-template-columns:repeat(6,1fr)} .g5{grid-template-columns:repeat(5,1fr)} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
     .list{display:grid;gap:8px}.item{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:8px}
     .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:10px}
     .small{font-size:.9rem;color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto}
@@ -59,13 +59,14 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
   </section>
   <section class="panel">
     <h2>DCA / Auto-Buy Rules (selected currency)</h2>
-    <div class="grid g5">
+    <div class="grid g6">
       <div>
         <label>Start Date</label>
         <div class="dateWrap"><input id="rDate" type="date" value="2021-10-31"><button id="pickRDate" type="button">📅</button></div>
       </div>
       <div><label>Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
       <div><label>Frequency</label><select id="rFreq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="monthly">Monthly</option></select></div>
+      <div><label>Asset</label><select id="rAsset"><option value="BTC">BTC</option><option value="ETH">ETH</option></select></div>
       <div><label>&nbsp;</label><button id="addRule">Add / Update Rule</button></div>
       <div><label>&nbsp;</label><button id="clearRules">Clear Rules</button></div>
     </div>
@@ -168,8 +169,8 @@ const jget = (k, fallback) => {
 
 const rules = (jget('btc.rules', structuredClone(defaultRules)) || [])
   .filter(r => r && typeof r === 'object')
-  .map(r => ({date: String(r.date || '').slice(0,10), amount: Number(r.amount||0), freq: String(r.freq||'daily')}))
-  .filter(r => r.date && r.amount > 0);
+  .map(r => ({date: String(r.date || '').slice(0,10), amount: Number(r.amount||0), freq: String(r.freq||'daily'), asset: String(r.asset||'BTC').toUpperCase()}))
+  .filter(r => r.date && r.amount > 0 && (r.asset==='BTC' || r.asset==='ETH'));
 const dips = (jget('btc.dips', []) || [])
   .filter(d => d && typeof d === 'object')
   .map(d => ({date: String(d.date || '').slice(0,10), amount: Number(d.amount||0), price: d.price==null?null:Number(d.price), asset: String(d.asset||'BTC').toUpperCase(), btc: d.btc==null?null:Number(d.btc), eth: d.eth==null?null:Number(d.eth), sats: d.sats==null?null:Number(d.sats)}))
@@ -240,7 +241,7 @@ $('demoBtn').onclick = () => {
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
-  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${esc(r.date)}</b>: <b>$${fmt(r.amount)} CAD/${esc(r.freq||'daily')}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
+  $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${esc(r.date)}</b>: <b>$${fmt(r.amount)} / ${esc(r.freq||'daily')} / ${esc(r.asset||'BTC')}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
   const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
   const lastEthPrice = Number(localStorage.getItem('btc.lastCurrentEthPriceCad') || 0);
@@ -308,9 +309,9 @@ function isRuleHit(rule, d){
   return true;
 }
 
-function dcaAmountOnDate(dateStr){
+function dcaAmountOnDate(dateStr, asset='BTC'){
   const d = dateObj(dateStr);
-  const applied = rules.filter(r=>r.date<=dateStr).sort((a,b)=>a.date.localeCompare(b.date)).pop();
+  const applied = rules.filter(r=>r.asset===asset && r.date<=dateStr).sort((a,b)=>a.date.localeCompare(b.date)).pop();
   if (!applied) return 0;
   return isRuleHit(applied, d) ? Number(applied.amount) : 0;
 }
@@ -347,10 +348,10 @@ function priceForDate(map, d){
 }
 
 $('addRule').onclick = () => {
-  const date = $('rDate').value; const amount = Number($('rAmt').value); const freq = $('rFreq').value;
+  const date = $('rDate').value; const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
   if (!date || amount<=0) return alert('Need valid date + amount.');
-  const i = rules.findIndex(r=>r.date===date);
-  if (i>=0) rules[i] = {date, amount, freq}; else rules.push({date, amount, freq});
+  const i = rules.findIndex(r=>r.date===date && (r.asset||'BTC')===asset);
+  if (i>=0) rules[i] = {date, amount, freq, asset}; else rules.push({date, amount, freq, asset});
   save(); render();
 };
 $('clearRules').onclick = () => { rules.splice(0, rules.length); save(); render(); };
@@ -361,7 +362,9 @@ $('normalizeRules').onclick = () => {
   for (const r of rules) {
     const amt = Number(r.amount);
     const freq = r.freq || 'daily';
-    if (!out.length || Number(out[out.length-1].amount) !== amt || (out[out.length-1].freq||'daily') !== freq) out.push({date:r.date, amount:amt, freq});
+    const asset = r.asset || 'BTC';
+    const prev = out[out.length-1];
+    if (!prev || Number(prev.amount) !== amt || (prev.freq||'daily') !== freq || (prev.asset||'BTC') !== asset) out.push({date:r.date, amount:amt, freq, asset});
   }
   rules.splice(0, rules.length, ...out);
   save(); render();
@@ -450,7 +453,7 @@ $('extractDipsFromShakepay').onclick = () => {
 
 $('calc').onclick = async () => {
   const status = $('status');
-  status.textContent = 'Fetching BTC history…';
+  status.textContent = 'Fetching market history…';
 
   try {
     const quote = getQuoteMode();
@@ -479,13 +482,26 @@ $('calc').onclick = async () => {
       const start = rules.map(r=>r.date).sort()[0];
       for (let d=dateObj(start), end=new Date(); d<=end; d.setDate(d.getDate()+1)) {
         const k = dayKey(d);
-        const amount = dcaAmountOnDate(k);
-        if (amount<=0) continue;
-        const px = priceForDate(map, d);
-        if (!px) { skipped++; continue; }
-        const got = amount/px;
-        invested += amount; dcaInvested += amount; btc += got; dcaBtc += got;
-        assetStats.BTC.invested += amount; assetStats.BTC.qty += got;
+        const amountBtc = dcaAmountOnDate(k, 'BTC');
+        const amountEth = dcaAmountOnDate(k, 'ETH');
+
+        if (amountBtc > 0) {
+          const pxB = priceForDate(maps['BTC'], d);
+          if (!pxB) { skipped++; } else {
+            const gotB = amountBtc / pxB;
+            invested += amountBtc; dcaInvested += amountBtc; btc += gotB; dcaBtc += gotB;
+            assetStats.BTC.invested += amountBtc; assetStats.BTC.qty += gotB;
+          }
+        }
+
+        if (amountEth > 0) {
+          const pxE = priceForDate(maps['ETH'] || maps['BTC'], d);
+          if (!pxE) { skipped++; } else {
+            const gotE = amountEth / pxE;
+            invested += amountEth; dcaInvested += amountEth;
+            assetStats.ETH.invested += amountEth; assetStats.ETH.qty += gotE;
+          }
+        }
       }
     }
 
