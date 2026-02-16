@@ -113,6 +113,12 @@
     </div>
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
+
+  <section class="panel">
+    <h2>BTC Flow Summary (Shakepay CSV)</h2>
+    <p class="small">Visibility only: buys, rewards, received, sent, and net flow from imported Shakepay BTC rows.</p>
+    <div id="flowResult"></div>
+  </section>
 </div>
 
 <dialog id="helpDialog">
@@ -384,6 +390,8 @@ function num(v){
 function normalizeShakepayRow(r){
   return {
     date: (r['date'] || '').trim(),
+    amountDebited: num(r['amount debited']),
+    assetDebited: (r['asset debited'] || '').trim().toUpperCase(),
     amountCredited: num(r['amount credited']),
     assetCredited: (r['asset credited'] || '').trim().toUpperCase(),
     marketValue: num(r['market value']),
@@ -472,6 +480,8 @@ $('analyzeShakepay').onclick = async () => {
     const btcRows = rows.filter(r => r.assetCredited === 'BTC');
     if (!btcRows.length) throw new Error('No BTC rows found.');
 
+    const btcSentRows = rows.filter(r => r.assetDebited === 'BTC');
+
     const dates = btcRows.map(r => r.date).filter(Boolean).sort();
     const start = dates[0] || 'n/a';
     const end = dates[dates.length-1] || 'n/a';
@@ -480,6 +490,8 @@ $('analyzeShakepay').onclick = async () => {
     let buyCad = 0;
     let buyBtc = 0;
     let rewardBtc = 0;
+    let recvBtc = 0;
+    let sentBtc = 0;
 
     const rewardByDesc = {};
 
@@ -501,8 +513,12 @@ $('analyzeShakepay').onclick = async () => {
       } else if (type === 'reward') {
         rewardBtc += btc;
         rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + sats;
+      } else if (type === 'receive') {
+        recvBtc += btc;
       }
     }
+
+    sentBtc = btcSentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
 
     save(); render();
 
@@ -525,8 +541,21 @@ $('analyzeShakepay').onclick = async () => {
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
     `;
+
+    const netFlow = buyBtc + rewardBtc + recvBtc - sentBtc;
+    $('flowResult').innerHTML = `
+      <div class="cards">
+        <div class="card"><div class="small">BTC Bought</div><b>${buyBtc.toFixed(8)}</b></div>
+        <div class="card"><div class="small">BTC Rewards</div><b>${rewardBtc.toFixed(8)}</b></div>
+        <div class="card"><div class="small">BTC Received</div><b>${recvBtc.toFixed(8)}</b></div>
+        <div class="card"><div class="small">BTC Sent</div><b>${sentBtc.toFixed(8)}</b></div>
+      </div>
+      <div class="card" style="margin-top:10px"><div class="small">Net BTC Flow (Bought + Rewards + Received - Sent)</div><b>${netFlow.toFixed(8)} BTC</b></div>
+      <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
+    `;
   } catch (e) {
     $('shakepayResult').innerHTML = `<p class="small warn">${e.message}</p>`;
+    $('flowResult').innerHTML = '';
   }
 };
 
