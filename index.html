@@ -96,8 +96,9 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
         <div class="dateWrap"><input id="rDate" type="date" value="2021-10-31"><button id="pickRDate" type="button">📅</button></div>
       </div>
       <div>
-        <label>End Date (optional)</label>
-        <div class="dateWrap"><input id="rEnd" type="date"><button id="pickREnd" type="button">📅</button></div>
+        <label>End Date</label>
+        <div class="dateWrap"><input id="rEnd" type="date" disabled><button id="pickREnd" type="button" disabled>📅</button></div>
+        <label class="small" style="margin-top:6px"><input id="rOngoing" type="checkbox" checked> Ongoing (no end date)</label>
       </div>
       <div><label>Amount (CAD)</label><input id="rAmt" type="number" min="0" step="0.01" value="15"></div>
       <div><label>Frequency</label><select id="rFreq"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="monthly">Monthly</option></select></div>
@@ -308,8 +309,14 @@ document.querySelectorAll('input[name="quoteMode"]').forEach(el=>el.addEventList
 }));
 
 $('pickRDate').onclick = () => openPicker($('rDate'));
-$('pickREnd').onclick = () => openPicker($('rEnd'));
+$('pickREnd').onclick = () => { if (!$('rEnd').disabled) openPicker($('rEnd')); };
 $('pickDDate').onclick = () => openPicker($('dDate'));
+$('rOngoing').addEventListener('change', ()=>{
+  const off = !$('rOngoing').checked;
+  $('rEnd').disabled = !off;
+  $('pickREnd').disabled = !off;
+  if (!off) $('rEnd').value = '';
+});
 $('sortDipDate').onclick = () => { dipSortMode = 'date'; render(); };
 $('sortDipBestRoi').onclick = () => { dipSortMode = 'bestRoi'; render(); };
 $('sortDipWorstRoi').onclick = () => { dipSortMode = 'worstRoi'; render(); };
@@ -465,7 +472,7 @@ function priceForDate(map, d){
 }
 
 $('addRule').onclick = () => {
-  const date = $('rDate').value; const end = $('rEnd').value || ''; const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
+  const date = $('rDate').value; const end = $('rOngoing').checked ? '' : ($('rEnd').value || ''); const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
   if (!date || amount<=0) return alert('Need valid start date + amount.');
   if (end && end < date) return alert('End date must be on/after start date.');
   const i = rules.findIndex(r=>r.date===date && (r.end||'')===end && (r.asset||'BTC')===asset);
