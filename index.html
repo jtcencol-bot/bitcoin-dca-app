@@ -84,9 +84,9 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
         <div class="dateWrap"><input id="dDate" type="date"><button id="pickDDate" type="button">📅</button></div>
       </div>
       <div><label>Amount Paid (CAD)</label><input id="dAmt" type="number" min="0" step="0.01" placeholder="1000"></div>
-      <div><label>Book Price (CAD/BTC, optional)</label><input id="dPrice" type="number" min="0" step="0.01" placeholder="90000"></div>
+      <div><label>Book Price (selected currency per unit, optional)</label><input id="dPrice" type="number" min="0" step="0.01" placeholder="90000"></div>
       <div><label>Received Amount (optional)</label><input id="dQty" type="number" min="0" step="0.00000001" placeholder="0.01111112"></div>
-      <div><label>Received Unit</label><select id="dQtyUnit"><option value="btc">BTC</option><option value="sats">sats</option></select></div>
+      <div><label>Received Unit</label><select id="dQtyUnit"><option value="btc">BTC</option><option value="sats">sats</option><option value="eth">ETH</option></select></div>
     </div>
     <div class="actions" style="margin-top:10px">
       <button id="addDip">Add Dip Buy</button>
@@ -172,7 +172,7 @@ const rules = (jget('btc.rules', structuredClone(defaultRules)) || [])
   .filter(r => r.date && r.amount > 0);
 const dips = (jget('btc.dips', []) || [])
   .filter(d => d && typeof d === 'object')
-  .map(d => ({date: String(d.date || '').slice(0,10), amount: Number(d.amount||0), price: d.price==null?null:Number(d.price), btc: d.btc==null?null:Number(d.btc), sats: d.sats==null?null:Number(d.sats)}))
+  .map(d => ({date: String(d.date || '').slice(0,10), amount: Number(d.amount||0), price: d.price==null?null:Number(d.price), asset: String(d.asset||'BTC').toUpperCase(), btc: d.btc==null?null:Number(d.btc), eth: d.eth==null?null:Number(d.eth), sats: d.sats==null?null:Number(d.sats)}))
   .filter(d => d.date && d.amount > 0);
 const shakepayBuyLots = (jget('btc.shakepayBuyLots', []) || [])
   .filter(l => l && typeof l === 'object')
@@ -243,12 +243,17 @@ function render(){
   $('ruleList').innerHTML = rules.map((r,i)=>`<div class="item">From <b>${esc(r.date)}</b>: <b>$${fmt(r.amount)} CAD/${esc(r.freq||'daily')}</b> <button onclick="delRule(${i})" style="width:auto;margin-left:8px">remove</button></div>`).join('') || '<p class="small">No rules.</p>';
 
   const lastPrice = Number(localStorage.getItem('btc.lastCurrentPriceCad') || 0);
+  const lastEthPrice = Number(localStorage.getItem('btc.lastCurrentEthPriceCad') || 0);
   const metric = (d) => {
-    const btcQty = d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0));
-    const valNow = lastPrice > 0 ? btcQty * lastPrice : 0;
+    const asset = (d.asset || 'BTC').toUpperCase();
+    const qty = asset === 'ETH'
+      ? (d.eth ? Number(d.eth) : (d.price ? Number(d.amount)/Number(d.price) : 0))
+      : (d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0)));
+    const pNow = asset === 'ETH' ? lastEthPrice : lastPrice;
+    const valNow = pNow > 0 ? qty * pNow : 0;
     const pnl = valNow - Number(d.amount || 0);
     const roi = Number(d.amount) > 0 ? (pnl / Number(d.amount)) * 100 : 0;
-    return {btcQty, valNow, pnl, roi};
+    return {qty, valNow, pnl, roi, asset};
   };
 
   if (dipSortMode === 'date') dips.sort((a,b)=>a.date.localeCompare(b.date));
@@ -258,16 +263,16 @@ function render(){
   if (dipSortMode === 'worstPnl') dips.sort((a,b)=>metric(a).pnl - metric(b).pnl);
 
   $('dipList').innerHTML = dips.map((d,i)=>{
-    const btcQty = d.btc ? Number(d.btc) : (d.sats ? Number(d.sats)/SATS : (d.price ? Number(d.amount)/Number(d.price) : 0));
-    const detail = d.btc ? `${d.btc.toFixed(8)} BTC` : (d.sats ? `${Number(d.sats).toLocaleString()} sats` : (d.price ? `at $${fmt(d.price)} CAD/BTC` : 'uses market daily avg'));
+    const m = metric(d);
+    const asset = m.asset;
+    const detail = asset === 'ETH'
+      ? (d.eth ? `${Number(d.eth).toFixed(8)} ETH` : (d.price ? `at $${fmt(d.price)} / ETH` : 'uses market daily avg'))
+      : (d.btc ? `${Number(d.btc).toFixed(8)} BTC` : (d.sats ? `${Number(d.sats).toLocaleString()} sats` : (d.price ? `at $${fmt(d.price)} / BTC` : 'uses market daily avg')));
     let perf = '';
-    if (lastPrice > 0 && btcQty > 0) {
-      const valNow = btcQty * lastPrice;
-      const pnl = valNow - Number(d.amount);
-      const roi = Number(d.amount) > 0 ? (pnl / Number(d.amount)) * 100 : 0;
-      perf = ` <span class="small">| PnL: <b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b> | ROI: <b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></span>`;
+    if (m.qty > 0 && m.valNow > 0) {
+      perf = ` <span class="small">| PnL: <b class="${m.pnl>=0?'ok':'warn'}">$${fmt(m.pnl)}</b> | ROI: <b class="${m.roi>=0?'ok':'warn'}">${m.roi.toFixed(2)}%</b></span>`;
     }
-    return `<div class="item">${esc(d.date)}: <b>$${fmt(d.amount)} CAD</b> — ${esc(detail)}${perf}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
+    return `<div class="item">${esc(d.date)} [${asset}]: <b>$${fmt(d.amount)}</b> — ${esc(detail)}${perf}<button onclick="editDip(${i})" style="width:auto;margin-left:8px">edit</button><button onclick="delDip(${i})" style="width:auto;margin-left:8px">remove</button></div>`;
   }).join('') || '<p class="small">No dip buys.</p>';
 }
 window.delRule = i => { rules.splice(i,1); save(); render(); };
@@ -279,8 +284,8 @@ window.editDip = i => {
   $('dDate').value = d.date || '';
   $('dAmt').value = d.amount ?? '';
   $('dPrice').value = d.price ?? '';
-  $('dQty').value = d.btc ?? (d.sats ?? '');
-  $('dQtyUnit').value = d.btc ? 'btc' : (d.sats ? 'sats' : 'btc');
+  $('dQty').value = d.eth ?? (d.btc ?? (d.sats ?? ''));
+  $('dQtyUnit').value = d.eth ? 'eth' : (d.btc ? 'btc' : (d.sats ? 'sats' : 'btc'));
   $('addDip').style.display = 'none';
   $('saveDipEdit').style.display = '';
   $('cancelDipEdit').style.display = '';
@@ -397,8 +402,10 @@ function readDipForm(){
   const qtyUnit = $('dQtyUnit').value;
   if (!date || amount<=0) throw new Error('Need dip date + amount.');
   const btc = qty > 0 && qtyUnit === 'btc' ? qty : null;
+  const eth = qty > 0 && qtyUnit === 'eth' ? qty : null;
   const sats = qty > 0 && qtyUnit === 'sats' ? qty : null;
-  return {date, amount, price: price||null, btc, sats};
+  const asset = eth ? 'ETH' : 'BTC';
+  return {date, amount, price: price||null, asset, btc, eth, sats};
 }
 
 $('addDip').onclick = () => {
@@ -483,20 +490,32 @@ $('calc').onclick = async () => {
     }
 
     if (useRules) for (const dip of dips) {
-      let btcGot = 0;
-      if (dip.btc) btcGot = Number(dip.btc);
-      else if (dip.sats) btcGot = Number(dip.sats)/SATS;
-      else if (dip.price) btcGot = Number(dip.amount)/Number(dip.price);
-      else {
-        const px = priceForDate(map, dateObj(dip.date));
-        if (!px) { skipped++; continue; }
-        btcGot = Number(dip.amount)/px;
+      const asset = (dip.asset || 'BTC').toUpperCase();
+      let got = 0;
+      if (asset === 'ETH') {
+        if (dip.eth) got = Number(dip.eth);
+        else if (dip.price) got = Number(dip.amount)/Number(dip.price);
+        else {
+          const px = priceForDate(maps['ETH'] || maps['BTC'], dateObj(dip.date));
+          if (!px) { skipped++; continue; }
+          got = Number(dip.amount)/px;
+        }
+      } else {
+        if (dip.btc) got = Number(dip.btc);
+        else if (dip.sats) got = Number(dip.sats)/SATS;
+        else if (dip.price) got = Number(dip.amount)/Number(dip.price);
+        else {
+          const px = priceForDate(maps['BTC'], dateObj(dip.date));
+          if (!px) { skipped++; continue; }
+          got = Number(dip.amount)/px;
+        }
       }
       invested += Number(dip.amount);
       dipInvested += Number(dip.amount);
-      btc += btcGot;
-      dipBtc += btcGot;
-      assetStats.BTC.invested += Number(dip.amount); assetStats.BTC.qty += btcGot;
+      if (asset === 'BTC') { btc += got; dipBtc += got; }
+      assetStats[asset] = assetStats[asset] || {invested:0, qty:0};
+      assetStats[asset].invested += Number(dip.amount);
+      assetStats[asset].qty += got;
     }
 
     if (useShakepayLots && shakepayBuyLots.length) {
@@ -567,8 +586,11 @@ $('calc').onclick = async () => {
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
-        <div class="card"><div class="small">BTC ROI (all BTC sources)</div><b>${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
-        <div class="card"><div class="small">ETH ROI (all ETH sources)</div><b>${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        <div class="card"><div class="small">BTC ROI (all BTC sources)</div><b class="${assetStats.BTC.invested?((((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100)>=0)?'ok':'warn'):''}">${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        <div class="card"><div class="small">BTC PnL (${quote})</div><b class="${((assetStats.BTC.qty*current-assetStats.BTC.invested)>=0)?'ok':'warn'}">${assetStats.BTC.invested?('$'+fmt(assetStats.BTC.qty*current-assetStats.BTC.invested)):'n/a'}</b></div>
+        <div class="card"><div class="small">ETH ROI (all ETH sources)</div><b class="${(assetStats.ETH.invested&&currentEth)?((((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100)>=0)?'ok':'warn'):''}">${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+      </div>
+      <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">ETH PnL (${quote})</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
@@ -650,8 +672,11 @@ $('analyzeShakepay').onclick = async () => {
 
     let buyCad = 0;
     let buyUnits = 0;
+    let buyBtcUnits = 0;
+    let buyEthUnits = 0;
     const parsedBuyLots = [];
     let rewardUnits = 0;
+    let rewardBtcUnits = 0;
     let recvUnits = 0;
     let sentUnits = 0;
 
@@ -665,7 +690,10 @@ $('analyzeShakepay').onclick = async () => {
 
       if (type === 'reward') {
         rewardUnits += qty;
-        rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + (r.assetCredited === 'BTC' ? sats : qty);
+        if ((r.assetCredited||'').toUpperCase() === 'BTC') {
+          rewardBtcUnits += qty;
+          rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + sats;
+        }
       } else if (type === 'receive') {
         recvUnits += qty;
       } else {
@@ -679,6 +707,8 @@ $('analyzeShakepay').onclick = async () => {
           if (amount > 0) {
             buyCad += amountInQuote;
             buyUnits += qty;
+            if ((r.assetCredited||'').toUpperCase() === 'BTC') buyBtcUnits += qty;
+            if ((r.assetCredited||'').toUpperCase() === 'ETH') buyEthUnits += qty;
           }
         }
       }
@@ -690,14 +720,12 @@ $('analyzeShakepay').onclick = async () => {
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
 
     let rewardsFiatToday = null;
-    if (assets.length === 1 && assets[0] === 'BTC') {
-      try {
-        const qRows = await fetchCC(quote, 10, 'BTC');
-        const qMap = toDailyMapCC(qRows, 1);
-        const qNow = priceForDate(qMap, new Date());
-        if (qNow) rewardsFiatToday = rewardUnits * qNow;
-      } catch {}
-    }
+    try {
+      const qRows = await fetchCC(quote, 10, 'BTC');
+      const qMap = toDailyMapCC(qRows, 1);
+      const qNow = priceForDate(qMap, new Date());
+      if (qNow) rewardsFiatToday = rewardBtcUnits * qNow;
+    } catch {}
 
     save(); render();
 
@@ -712,11 +740,15 @@ $('analyzeShakepay').onclick = async () => {
         <div class="card"><div class="small">Date range (${esc(assets.join('/'))} rows)</div><b>${esc(start)} → ${esc(end)}</b></div>
         <div class="card"><div class="small">${esc(assets.join('/'))} buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
         <div class="card"><div class="small">Total buy ${quote} (all selected assets)</div><b>$${fmt(buyCad)}</b></div>
-        <div class="card"><div class="small">Total credited units (${esc(assets.join('/'))})</div><b>${buyUnits.toFixed(8)}</b></div>
+        <div class="card"><div class="small">BTC units credited</div><b>${buyBtcUnits.toFixed(8)} BTC</b></div>
+      </div>
+      <div class="cards" style="margin-top:10px">
+        <div class="card"><div class="small">ETH units credited</div><b>${buyEthUnits.toFixed(8)} ETH</b></div>
+        <div class="card"><div class="small">Total units credited (mixed)</div><b>${buyUnits.toFixed(8)}</b></div>
       </div>
       <div class="card" style="margin-top:10px">
-        <div class="small">Rewards breakdown (${esc(assets.join('/'))})</div>
-        <p><b>Total rewards:</b> ${rewardUnits.toFixed(8)} ${esc(assets.join('/'))}${assets.length===1&&assets[0]==='BTC'?` (${Math.round(rewardUnits*SATS).toLocaleString()} sats)`:''}${rewardsFiatToday!=null ? ` ≈ <b>$${fmt(rewardsFiatToday)} ${quote}</b> today` : ''}</p>
+        <div class="small">Shakepay Rewards Breakdown (BTC)</div>
+        <p><b>Total rewards (BTC):</b> ${rewardBtcUnits.toFixed(8)} (${Math.round(rewardBtcUnits*SATS).toLocaleString()} sats)${rewardsFiatToday!=null ? ` ≈ <b>$${fmt(rewardsFiatToday)} ${quote}</b> today` : ''}</p>
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
       <p class="small" style="margin-top:8px">Tip: keep DCA rules manual for accuracy; use Shakepay import mainly for analysis and rewards.</p>
