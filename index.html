@@ -17,16 +17,27 @@
     .small{font-size:.9rem;color:var(--muted)} .ok{color:var(--ok)} .warn{color:var(--warn)} .actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto}
     .dateWrap{display:flex;gap:6px}.dateWrap input{flex:1}.dateWrap button{width:auto;padding:8px 10px}
     table{width:100%;border-collapse:collapse} th,td{border-bottom:1px solid #33406a;padding:8px;text-align:left}
+    .hero{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+    .pill{display:inline-block;padding:4px 8px;border:1px solid #3a4670;border-radius:999px;background:#0f1630;color:#b7c3e4;font-size:.8rem}
+    dialog{border:1px solid #3a4670;background:#0f1630;color:#ecf0ff;border-radius:12px;max-width:760px;width:min(92vw,760px)}
+    dialog::backdrop{background:rgba(0,0,0,.55)}
     @media(max-width:980px){.g5,.g4,.g3,.cards{grid-template-columns:1fr 1fr}}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-    <h1 style="margin:0;">Bitcoin DCA Calculator (CAD)</h1>
-    <button id="clearAll" type="button" style="width:auto;background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
+  <div class="hero">
+    <div>
+      <h1 style="margin:0;">Bitcoin DCA Calculator (CAD)</h1>
+      <p class="sub" style="margin:6px 0 8px;">DCA = <b>Dollar-Cost Averaging</b> (aka recurring buys over time). Track recurring buys, dip buys, and estimated returns in CAD.</p>
+      <span class="pill">Not financial/tax advice</span>
+    </div>
+    <div class="actions">
+      <button id="helpBtn" type="button">Help</button>
+      <button id="demoBtn" type="button">Load Demo Data</button>
+      <button id="clearAll" type="button" style="background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
+    </div>
   </div>
-  <p class="sub">Auto-fetches historical BTC prices, supports rule changes + same-day dip buys + CSV validation.</p>
 
   <section class="panel">
     <h2>DCA Rules (daily CAD)</h2>
@@ -86,9 +97,25 @@
       <div><label>Tolerance (%)</label><input id="tol" type="number" min="0" step="0.01" value="0.5"></div>
       <div><label>&nbsp;</label><button id="validateCsv">Validate CSV</button></div>
     </div>
+    <div class="actions" style="margin-top:10px">
+      <button id="importCsvBuys" type="button">Import CSV Buys as Dip Buys</button>
+    </div>
     <div id="csvResult" style="margin-top:10px"></div>
   </section>
 </div>
+
+<dialog id="helpDialog">
+  <h3>Quick Guide</h3>
+  <ol>
+    <li><b>Add DCA rules</b>: each rule sets the total daily CAD amount from that date onward.</li>
+    <li><b>Add dip buys</b> (optional): use market price, book price, or exact BTC/sats received.</li>
+    <li><b>Calculate Returns</b> to fetch history and estimate BTC, value, and ROI.</li>
+    <li><b>CSV Validate</b> checks if <code>amount/price</code> matches BTC reported.</li>
+    <li><b>CSV Import</b> adds buy rows into dip buys for easier reconciliation.</li>
+  </ol>
+  <p class="small">Privacy: your data is stored in your browser (localStorage). Use <b>Clear All</b> to wipe it.</p>
+  <div class="actions"><button id="closeHelp" type="button">Close</button></div>
+</dialog>
 
 <script>
 const SATS = 100000000;
@@ -106,6 +133,14 @@ const save = () => { localStorage.setItem('btc.rules', JSON.stringify(rules)); l
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
 $('pickRDate').onclick = () => openPicker($('rDate'));
 $('pickDDate').onclick = () => openPicker($('dDate'));
+$('helpBtn').onclick = () => $('helpDialog').showModal();
+$('closeHelp').onclick = () => $('helpDialog').close();
+$('demoBtn').onclick = () => {
+  rules.splice(0, rules.length, {date:'2024-01-01', amount:5}, {date:'2025-01-01', amount:10});
+  dips.splice(0, dips.length, {date:'2025-08-05', amount:500, price:78000, btc:null, sats:null});
+  save(); render();
+  $('status').textContent = 'Loaded demo data.';
+};
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
@@ -319,43 +354,75 @@ function parseCsv(text){
   });
 }
 
-$('validateCsv').onclick = async () => {
+async function getCsvRows(){
   const file = $('csvFile').files[0];
-  if (!file) return alert('Pick a CSV first.');
-  const tolPct = Number($('tol').value || 0.5);
+  if (!file) throw new Error('Pick a CSV first.');
   const text = await file.text();
   const rows = parseCsv(text);
-  if (!rows.length) return $('csvResult').innerHTML = '<p class="small warn">No rows found.</p>';
+  if (!rows.length) throw new Error('No rows found.');
+  return rows;
+}
 
-  const issues = [];
-  let checked=0;
-  for (const [i,r] of rows.entries()) {
-    const type = (r.type||'buy').toLowerCase();
-    if (type !== 'buy' && type !== 'sell') continue;
+$('validateCsv').onclick = async () => {
+  try {
+    const tolPct = Number($('tol').value || 0.5);
+    const rows = await getCsvRows();
 
-    const amount = Number(r.amount_cad||0);
-    const price = Number(r.price_cad||0);
-    const btc = Number(r.btc||0) || (Number(r.sats||0)/SATS);
-    if (!(amount>0 && price>0 && btc>0)) continue;
+    const issues = [];
+    let checked=0;
+    for (const [i,r] of rows.entries()) {
+      const type = (r.type||'buy').toLowerCase();
+      if (type !== 'buy' && type !== 'sell') continue;
 
-    checked++;
-    const implied = amount/price;
-    const errPct = Math.abs((btc - implied)/implied)*100;
-    if (errPct > tolPct) issues.push({row:i+2, errPct, implied, btc, date:r.date||''});
+      const amount = Number(r.amount_cad||0);
+      const price = Number(r.price_cad||0);
+      const btc = Number(r.btc||0) || (Number(r.sats||0)/SATS);
+      if (!(amount>0 && price>0 && btc>0)) continue;
+
+      checked++;
+      const implied = amount/price;
+      const errPct = Math.abs((btc - implied)/implied)*100;
+      if (errPct > tolPct) issues.push({row:i+2, errPct, implied, btc, date:r.date||''});
+    }
+
+    if (!checked) {
+      $('csvResult').innerHTML = '<p class="small warn">No valid buy/sell rows with amount_cad + price_cad + btc/sats.</p>';
+      return;
+    }
+
+    $('csvResult').innerHTML = `
+      <p class="small">Checked ${checked} rows. Tolerance ${tolPct}%.</p>
+      ${issues.length ? `<p class="warn"><b>${issues.length} row(s) outside tolerance.</b></p>
+        <table><thead><tr><th>Row</th><th>Date</th><th>Your BTC</th><th>Implied BTC</th><th>Error %</th></tr></thead><tbody>
+        ${issues.slice(0,50).map(x=>`<tr><td>${x.row}</td><td>${x.date}</td><td>${x.btc.toFixed(8)}</td><td>${x.implied.toFixed(8)}</td><td>${x.errPct.toFixed(3)}%</td></tr>`).join('')}
+        </tbody></table>` : '<p class="ok"><b>No material mismatches found.</b></p>'}
+    `;
+  } catch (e) {
+    $('csvResult').innerHTML = `<p class="small warn">${e.message}</p>`;
   }
+};
 
-  if (!checked) {
-    $('csvResult').innerHTML = '<p class="small warn">No valid buy/sell rows with amount_cad + price_cad + btc/sats.</p>';
-    return;
+$('importCsvBuys').onclick = async () => {
+  try {
+    const rows = await getCsvRows();
+    let imported = 0;
+    for (const r of rows) {
+      const type = (r.type||'buy').toLowerCase();
+      if (type !== 'buy') continue;
+      const date = (r.date||'').slice(0,10);
+      const amount = Number(r.amount_cad||0);
+      if (!date || !(amount>0)) continue;
+      const btc = Number(r.btc||0) || null;
+      const sats = !btc && Number(r.sats||0) ? Number(r.sats||0) : null;
+      const price = Number(r.price_cad||0) || null;
+      dips.push({date, amount, price, btc, sats});
+      imported++;
+    }
+    save(); render();
+    $('csvResult').innerHTML = `<p class="ok"><b>Imported ${imported} buy row(s) as dip buys.</b></p>`;
+  } catch (e) {
+    $('csvResult').innerHTML = `<p class="small warn">${e.message}</p>`;
   }
-
-  $('csvResult').innerHTML = `
-    <p class="small">Checked ${checked} rows. Tolerance ${tolPct}%.</p>
-    ${issues.length ? `<p class="warn"><b>${issues.length} row(s) outside tolerance.</b></p>
-      <table><thead><tr><th>Row</th><th>Date</th><th>Your BTC</th><th>Implied BTC</th><th>Error %</th></tr></thead><tbody>
-      ${issues.slice(0,50).map(x=>`<tr><td>${x.row}</td><td>${x.date}</td><td>${x.btc.toFixed(8)}</td><td>${x.implied.toFixed(8)}</td><td>${x.errPct.toFixed(3)}%</td></tr>`).join('')}
-      </tbody></table>` : '<p class="ok"><b>No material mismatches found.</b></p>'}
-  `;
 };
 
 render();
