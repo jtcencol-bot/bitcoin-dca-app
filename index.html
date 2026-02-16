@@ -37,10 +37,10 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       <span class="pill">Not financial/tax advice</span>
     </div>
     <div class="actions">
-      <select id="assetMode" style="width:auto">
-        <option value="btc">BTC only</option>
-        <option value="bteth">BTC + ETH</option>
-      </select>
+      <label class="small" style="display:flex;align-items:center;gap:6px"><input type="radio" name="assetMode" value="btc" checked> Bitcoin-Only Mode</label>
+      <label class="small" style="display:flex;align-items:center;gap:6px"><input type="radio" name="assetMode" value="bteth"> BTC + ETH Mode</label>
+      <label class="small" style="display:flex;align-items:center;gap:6px"><input type="radio" name="quoteMode" value="CAD" checked> CAD</label>
+      <label class="small" style="display:flex;align-items:center;gap:6px"><input type="radio" name="quoteMode" value="USD"> USD</label>
       <button id="helpBtn" type="button">Help</button>
       <button id="demoBtn" type="button">Load Demo Data</button>
       <button id="clearAll" type="button" style="background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
@@ -58,7 +58,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
   <section class="panel">
-    <h2>DCA / Auto-Buy Rules (CAD)</h2>
+    <h2>DCA / Auto-Buy Rules (selected currency)</h2>
     <div class="grid g5">
       <div>
         <label>Start Date</label>
@@ -113,11 +113,8 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
   <section class="panel">
     <h2>Price Source & Calculate</h2>
     <div class="grid g3">
-      <div>
-        <label>Primary Source</label>
-        <select id="source"><option value="cc-cad">CryptoCompare BTC/CAD daily</option><option value="cc-usd-fx">CryptoCompare BTC/USD × constant FX</option></select>
-      </div>
-      <div><label>Fallback FX (USD→CAD)</label><input id="fx" type="number" min="0.5" step="0.0001" value="1.35"></div>
+      <div><label>Price source</label><input value="CryptoCompare historical daily" disabled></div>
+      <div><label>FX (CAD per USD, used for CAD↔USD conversion)</label><input id="fx" type="number" min="0.5" step="0.0001" value="1.35"></div>
       <div><label>&nbsp;</label><button id="calc">Calculate Returns</button></div>
     </div>
     <div class="grid g3" style="margin-top:10px">
@@ -179,7 +176,7 @@ const dips = (jget('btc.dips', []) || [])
   .filter(d => d.date && d.amount > 0);
 const shakepayBuyLots = (jget('btc.shakepayBuyLots', []) || [])
   .filter(l => l && typeof l === 'object')
-  .map(l => ({date: String(l.date || '').slice(0,10), amount: Number(l.amount||0), btc: Number(l.btc||0), asset: String(l.asset||'BTC').toUpperCase(), price: l.price==null?null:Number(l.price)}))
+  .map(l => ({date: String(l.date || '').slice(0,10), amount: Number(l.amount||0), ccy: String(l.ccy||'CAD').toUpperCase(), btc: Number(l.btc||0), asset: String(l.asset||'BTC').toUpperCase(), price: l.price==null?null:Number(l.price)}))
   .filter(l => l.date && l.amount > 0);
 let editingDipIndex = null;
 let dipSortMode = 'date';
@@ -189,6 +186,12 @@ const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
 const dayKey = d => new Date(d).toISOString().slice(0,10);
 const dateObj = ymd => new Date(ymd+'T00:00:00');
 const save = () => { localStorage.setItem('btc.rules', JSON.stringify(rules)); localStorage.setItem('btc.dips', JSON.stringify(dips)); };
+const convertAmount = (amount, from, to, fxCadPerUsd) => {
+  if (from === to) return Number(amount);
+  if (from === 'CAD' && to === 'USD') return Number(amount) / fxCadPerUsd;
+  if (from === 'USD' && to === 'CAD') return Number(amount) * fxCadPerUsd;
+  return Number(amount);
+};
 const esc = (s='') => String(s)
   .replace(/&/g,'&amp;')
   .replace(/</g,'&lt;')
@@ -197,20 +200,27 @@ const esc = (s='') => String(s)
   .replace(/'/g,'&#39;');
 
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
-function applyMode(mode){
+function getAssetMode(){
+  return (document.querySelector('input[name="assetMode"]:checked') || {}).value || 'btc';
+}
+function getQuoteMode(){
+  return (document.querySelector('input[name="quoteMode"]:checked') || {}).value || 'CAD';
+}
+function applyMode(){
+  const mode = getAssetMode();
+  const quote = getQuoteMode();
   document.body.classList.remove('mode-btc','mode-bteth');
   const bteth = mode === 'bteth';
   document.body.classList.add(bteth ? 'mode-bteth' : 'mode-btc');
-  $('appTitle').textContent = bteth ? 'Bitcoin/ETH DCA Calculator (CAD)' : 'Bitcoin DCA Calculator (CAD)';
+  $('appTitle').textContent = bteth ? `Bitcoin/ETH DCA Calculator (${quote})` : `Bitcoin DCA Calculator (${quote})`;
 }
 const savedMode = localStorage.getItem('btc.assetMode') || 'btc';
-$('assetMode').value = savedMode;
-applyMode(savedMode);
-$('assetMode').onchange = () => {
-  const mode = $('assetMode').value;
-  localStorage.setItem('btc.assetMode', mode);
-  applyMode(mode);
-};
+const savedQuote = localStorage.getItem('btc.quoteMode') || 'CAD';
+(document.querySelector(`input[name="assetMode"][value="${savedMode}"]`) || document.querySelector('input[name="assetMode"][value="btc"]')).checked = true;
+(document.querySelector(`input[name="quoteMode"][value="${savedQuote}"]`) || document.querySelector('input[name="quoteMode"][value="CAD"]')).checked = true;
+applyMode();
+document.querySelectorAll('input[name="assetMode"]').forEach(el=>el.addEventListener('change', ()=>{ localStorage.setItem('btc.assetMode', getAssetMode()); applyMode(); }));
+document.querySelectorAll('input[name="quoteMode"]').forEach(el=>el.addEventListener('change', ()=>{ localStorage.setItem('btc.quoteMode', getQuoteMode()); applyMode(); }));
 
 $('pickRDate').onclick = () => openPicker($('rDate'));
 $('pickDDate').onclick = () => openPicker($('dDate'));
@@ -422,7 +432,9 @@ $('extractDipsFromShakepay').onclick = () => {
     const key = `BTC|${lot.date}|${Number(lot.amount).toFixed(2)}|${Number(lot.btc||0).toFixed(8)}`;
     const exists = dips.some(d => `BTC|${d.date}|${Number(d.amount).toFixed(2)}|${Number(d.btc||0).toFixed(8)}` === key);
     if (exists) continue;
-    dips.push({date: lot.date, amount: Number(lot.amount), price: lot.price || null, btc: Number(lot.btc)||null, sats: null});
+    const quote = getQuoteMode();
+    const amountInQuote = convertAmount(Number(lot.amount), String(lot.ccy||'CAD').toUpperCase(), quote, Number($('fx').value||1.35));
+    dips.push({date: lot.date, amount: amountInQuote, price: lot.price || null, btc: Number(lot.btc)||null, sats: null});
     added++;
   }
   save(); render();
@@ -434,26 +446,19 @@ $('calc').onclick = async () => {
   status.textContent = 'Fetching BTC history…';
 
   try {
-    const source = $('source').value;
+    const quote = getQuoteMode();
     const fx = Number($('fx').value || 1.35);
 
-    const assetMode = $('assetMode').value;
+    const assetMode = getAssetMode();
     const activeAssets = assetMode === 'bteth' ? ['BTC','ETH'] : ['BTC'];
 
     const maps = {};
     let sourceLabel = '';
     for (const a of activeAssets) {
-      if (source === 'cc-cad') {
-        const rows = await fetchCC('CAD', 2000, a);
-        maps[a] = toDailyMapCC(rows, 1);
-      } else {
-        const rows = await fetchCC('USD', 2000, a);
-        maps[a] = toDailyMapCC(rows, fx);
-      }
+      const rows = await fetchCC(quote, 2000, a);
+      maps[a] = toDailyMapCC(rows, 1);
     }
-    sourceLabel = source === 'cc-cad'
-      ? `CryptoCompare ${activeAssets.join('/')} CAD (OHLC avg/day)`
-      : `CryptoCompare ${activeAssets.join('/')} USD × FX ${fx}`;
+    sourceLabel = `CryptoCompare ${activeAssets.join('/')} ${quote} (OHLC avg/day)`;
     const map = maps['BTC'];
 
     const mode = $('calcMode').value;
@@ -501,12 +506,13 @@ $('calc').onclick = async () => {
         const asset = (lot.asset || 'BTC').toUpperCase();
         const key = `${asset}|${lot.date}|${Number(lot.amount).toFixed(2)}|${(Number(lot.btc||0)).toFixed(8)}`;
         if (asset === 'BTC' && dipKeys.has(key)) continue; // avoid double-count if same BTC buy already imported as dip
-        invested += Number(lot.amount);
+        const amountInQuote = convertAmount(Number(lot.amount), String(lot.ccy||'CAD').toUpperCase(), quote, fx);
+        invested += amountInQuote;
         const qty = Number(lot.btc || 0);
         if (asset === 'BTC') shakepayBtc += qty;
-        shakepayInvested += Number(lot.amount);
+        shakepayInvested += amountInQuote;
         assetStats[asset] = assetStats[asset] || {invested:0, qty:0};
-        assetStats[asset].invested += Number(lot.amount);
+        assetStats[asset].invested += amountInQuote;
         assetStats[asset].qty += qty;
         btc += asset === 'BTC' ? qty : 0;
         lotsIncluded++;
@@ -548,30 +554,30 @@ $('calc').onclick = async () => {
     render();
     $('result').innerHTML = `
       <div class="cards">
-        <div class="card"><div class="small">Total Invested (CAD)</div><b>$${fmt(invested)}</b></div>
-        <div class="card"><div class="small">From DCA (CAD)</div><b>$${fmt(dcaInvested)}</b></div>
-        <div class="card"><div class="small">From Dip Buys (CAD)</div><b>$${fmt(dipInvested)}</b></div>
+        <div class="card"><div class="small">Total Invested (${quote})</div><b>$${fmt(invested)}</b></div>
+        <div class="card"><div class="small">From DCA (${quote})</div><b>$${fmt(dcaInvested)}</b></div>
+        <div class="card"><div class="small">From Dip Buys (${quote})</div><b>$${fmt(dipInvested)}</b></div>
         <div class="card"><div class="small">Estimated BTC</div><b>${assetStats.BTC.qty.toFixed(8)} BTC</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
-        <div class="card"><div class="small">Current BTC Price (CAD)</div><b>$${fmt(current)}</b></div>
-        <div class="card"><div class="small">Current ETH Price (CAD)</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>
-        <div class="card"><div class="small">Portfolio Value (CAD)</div><b>$${fmt(value)}</b></div>
-        <div class="card"><div class="small">PnL (CAD)</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
+        <div class="card"><div class="small">Current BTC Price (${quote})</div><b>$${fmt(current)}</b></div>
+        <div class="card"><div class="small">Current ETH Price (${quote})</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>
+        <div class="card"><div class="small">Portfolio Value (${quote})</div><b>$${fmt(value)}</b></div>
+        <div class="card"><div class="small">PnL (${quote})</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
         <div class="card"><div class="small">BTC ROI (all BTC sources)</div><b>${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
         <div class="card"><div class="small">ETH ROI (all ETH sources)</div><b>${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
-        <div class="card"><div class="small">ETH PnL (CAD)</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
+        <div class="card"><div class="small">ETH PnL (${quote})</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">DCA ROI</div><b>${dcaRoi==null?'n/a':dcaRoi.toFixed(2)+'%'}</b></div>
-        <div class="card"><div class="small">DCA PnL (CAD)</div><b class="${dcaRoi==null?'':(dcaPnl>=0?'ok':'warn')}">${dcaRoi==null?'n/a':'$'+fmt(dcaPnl)}</b></div>
+        <div class="card"><div class="small">DCA PnL (${quote})</div><b class="${dcaRoi==null?'':(dcaPnl>=0?'ok':'warn')}">${dcaRoi==null?'n/a':'$'+fmt(dcaPnl)}</b></div>
         <div class="card"><div class="small">Dip ROI</div><b>${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
-        <div class="card"><div class="small">Dip PnL (CAD)</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
+        <div class="card"><div class="small">Dip PnL (${quote})</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
       </div>
-      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' CAD') : 'off'}.</p>`;
+      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' '+quote) : 'off'}.</p>`;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
@@ -629,7 +635,8 @@ $('analyzeShakepay').onclick = async () => {
     const rows = parseCsv(text).map(normalizeShakepayRow);
     if (!rows.length) throw new Error('No rows found in Shakepay file.');
 
-    const mode = $('assetMode').value;
+    const mode = getAssetMode();
+    const quote = getQuoteMode();
     const assets = mode === 'bteth' ? ['BTC','ETH'] : ['BTC'];
 
     const assetRows = rows.filter(r => assets.includes(r.assetCredited));
@@ -665,10 +672,12 @@ $('analyzeShakepay').onclick = async () => {
         const isCostBearingBtcAcquisition = (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
         if (isCostBearingBtcAcquisition) {
           const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
+          const amountCcy = (r.bookCostCurrency || r.marketValueCurrency || 'CAD').toUpperCase();
+          const amountInQuote = convertAmount(amount, amountCcy, quote, Number($('fx').value||1.35));
           const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
-          if (date && amount > 0) parsedBuyLots.push({date, amount, btc: qty || 0, asset: r.assetCredited || 'BTC', price: price || null});
+          if (date && amount > 0) parsedBuyLots.push({date, amount, ccy: amountCcy, btc: qty || 0, asset: r.assetCredited || 'BTC', price: price || null});
           if (amount > 0) {
-            buyCad += amount;
+            buyCad += amountInQuote;
             buyUnits += qty;
           }
         }
@@ -680,13 +689,13 @@ $('analyzeShakepay').onclick = async () => {
     shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
 
-    let rewardsCadToday = null;
+    let rewardsFiatToday = null;
     if (assets.length === 1 && assets[0] === 'BTC') {
       try {
-        const cadRows = await fetchCC('CAD', 10);
-        const cadMap = toDailyMapCC(cadRows, 1);
-        const cadNow = priceForDate(cadMap, new Date());
-        if (cadNow) rewardsCadToday = rewardUnits * cadNow;
+        const qRows = await fetchCC(quote, 10, 'BTC');
+        const qMap = toDailyMapCC(qRows, 1);
+        const qNow = priceForDate(qMap, new Date());
+        if (qNow) rewardsFiatToday = rewardUnits * qNow;
       } catch {}
     }
 
@@ -702,12 +711,12 @@ $('analyzeShakepay').onclick = async () => {
       <div class="cards" style="margin-top:8px">
         <div class="card"><div class="small">Date range (${esc(assets.join('/'))} rows)</div><b>${esc(start)} → ${esc(end)}</b></div>
         <div class="card"><div class="small">${esc(assets.join('/'))} buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
-        <div class="card"><div class="small">Total buy CAD (all selected assets)</div><b>$${fmt(buyCad)}</b></div>
+        <div class="card"><div class="small">Total buy ${quote} (all selected assets)</div><b>$${fmt(buyCad)}</b></div>
         <div class="card"><div class="small">Total credited units (${esc(assets.join('/'))})</div><b>${buyUnits.toFixed(8)}</b></div>
       </div>
       <div class="card" style="margin-top:10px">
         <div class="small">Rewards breakdown (${esc(assets.join('/'))})</div>
-        <p><b>Total rewards:</b> ${rewardUnits.toFixed(8)} ${esc(assets.join('/'))}${assets.length===1&&assets[0]==='BTC'?` (${Math.round(rewardUnits*SATS).toLocaleString()} sats)`:''}${rewardsCadToday!=null ? ` ≈ <b>$${fmt(rewardsCadToday)} CAD</b> today` : ''}</p>
+        <p><b>Total rewards:</b> ${rewardUnits.toFixed(8)} ${esc(assets.join('/'))}${assets.length===1&&assets[0]==='BTC'?` (${Math.round(rewardUnits*SATS).toLocaleString()} sats)`:''}${rewardsFiatToday!=null ? ` ≈ <b>$${fmt(rewardsFiatToday)} ${quote}</b> today` : ''}</p>
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
       <p class="small" style="margin-top:8px">Tip: keep DCA rules manual for accuracy; use Shakepay import mainly for analysis and rewards.</p>
