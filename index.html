@@ -30,8 +30,10 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       .g6,.g5,.g4,.g3,.cards{grid-template-columns:1fr 1fr}
       .hero .actions{width:100%}
     }
+    #mobileQuickNav{display:none}
+    #mobileStickyActions{display:none}
     @media(max-width:640px){
-      .wrap{padding:12px}
+      .wrap{padding:12px;padding-bottom:86px}
       .g6,.g5,.g4,.g3,.cards{grid-template-columns:1fr}
       .actions{gap:6px}
       .actions button{width:100%}
@@ -39,7 +41,13 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       .dateWrap button{width:100%}
       .panel{padding:12px}
       h1{font-size:2rem;line-height:1.1}
-      h2{font-size:1.9rem;line-height:1.15}
+      h2{font-size:1.35rem;line-height:1.2;cursor:pointer}
+      #mobileQuickNav{display:block;position:sticky;top:0;z-index:20;background:var(--bg)}
+      #mobileQuickNav .actions{display:grid;grid-template-columns:repeat(4,1fr)}
+      #mobileQuickNav .actions button{width:100%}
+      #mobileStickyActions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;position:fixed;left:0;right:0;bottom:0;padding:10px;background:rgba(8,12,24,.95);border-top:1px solid var(--line);z-index:50}
+      #mobileStickyActions button{padding:12px}
+      .panel.collapsed > :not(h2){display:none}
     }
   </style>
 </head>
@@ -61,7 +69,16 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     </div>
   </div>
 
-  <section class="panel">
+  <div class="panel" id="mobileQuickNav">
+    <div class="actions">
+      <button type="button" class="chip" id="jumpShakepay">Shakepay</button>
+      <button type="button" class="chip" id="jumpRules">Rules</button>
+      <button type="button" class="chip" id="jumpDips">Dips</button>
+      <button type="button" class="chip" id="jumpReturns">Returns</button>
+    </div>
+  </div>
+
+  <section class="panel" id="sec-shakepay">
     <h2>Shakepay Import (recommended first step)</h2>
     <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. Asset mode controls whether BTC-only rows or BTC+ETH rows are included in analysis. If you do not use Shakepay, enter your information manually below. Data is processed in-browser and saved only to this browser profile.</p>
     <div class="grid g3">
@@ -71,7 +88,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     </div>
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
-  <section class="panel">
+  <section class="panel" id="sec-rules">
     <h2>DCA / Auto-Buy Rules (selected currency)</h2>
     <div class="grid g6">
       <div>
@@ -90,7 +107,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     <div id="ruleList" class="list" style="margin-top:10px"></div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-dips">
     <h2>Dip Buys (CAD)</h2>
     <p class="small">Optional override fields let you use your books exactly (price + BTC or sats).</p>
     <div class="grid g5">
@@ -125,7 +142,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     <div id="dipList" class="list" style="margin-top:10px"></div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="sec-returns">
     <h2>Returns Calculator</h2>
     <div class="grid g3">
       <div><label>Price source</label><input value="CryptoCompare historical daily" disabled></div>
@@ -156,7 +173,7 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
   </section>
 
 
-  <section class="panel">
+  <section class="panel" id="sec-donate">
     <h2>Support / Donate</h2>
     <p class="small">If this tool helped, tips are appreciated 🙏</p>
     <div class="grid g4">
@@ -166,6 +183,12 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
       <div class="item"><div><b>Shakepay handle</b></div><div class="small" id="donSp">crypt0jt</div><button class="chip" type="button" onclick="copyDonate('donSp')">Copy</button></div>
     </div>
   </section>
+
+  <div id="mobileStickyActions">
+    <button type="button" id="stickyAnalyze">Analyze</button>
+    <button type="button" id="stickyCalc">Update</button>
+    <button type="button" id="stickyClear">Clear</button>
+  </div>
 
 </div>
 
@@ -213,6 +236,12 @@ let dipSortMode = 'date';
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
 const dayKey = d => new Date(d).toISOString().slice(0,10);
+
+function jumpTo(id){
+  const el = $(id);
+  if (!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'start'});
+}
 const dateObj = ymd => new Date(ymd+'T00:00:00');
 const save = () => { localStorage.setItem('btc.rules', JSON.stringify(rules)); localStorage.setItem('btc.dips', JSON.stringify(dips)); };
 const convertAmount = (amount, from, to, fxCadPerUsd) => {
@@ -283,6 +312,22 @@ $('sortDipBiggestPnl').onclick = () => { dipSortMode = 'biggestPnl'; render(); }
 $('sortDipWorstPnl').onclick = () => { dipSortMode = 'worstPnl'; render(); };
 $('helpBtn').onclick = () => $('helpDialog').showModal();
 $('closeHelp').onclick = () => $('helpDialog').close();
+$('jumpShakepay')?.addEventListener('click', ()=>jumpTo('sec-shakepay'));
+$('jumpRules')?.addEventListener('click', ()=>jumpTo('sec-rules'));
+$('jumpDips')?.addEventListener('click', ()=>jumpTo('sec-dips'));
+$('jumpReturns')?.addEventListener('click', ()=>jumpTo('sec-returns'));
+$('stickyAnalyze')?.addEventListener('click', ()=>$('analyzeShakepay').click());
+$('stickyCalc')?.addEventListener('click', ()=>$('calc').click());
+$('stickyClear')?.addEventListener('click', ()=>$('clearAll').click());
+
+if (window.matchMedia('(max-width: 640px)').matches) {
+  document.querySelectorAll('.panel > h2').forEach((h2) => {
+    const panel = h2.parentElement;
+    if (!panel || panel.id === 'sec-shakepay') return;
+    panel.classList.add('collapsed');
+    h2.addEventListener('click', () => panel.classList.toggle('collapsed'));
+  });
+}
 
 function render(){
   rules.sort((a,b)=>a.date.localeCompare(b.date));
