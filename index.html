@@ -348,9 +348,15 @@ $('calc').onclick = async () => {
 function parseCsv(text){
   const lines = text.split(/\r?\n/).filter(Boolean);
   if (!lines.length) return [];
-  const head = lines[0].split(',').map(s=>s.trim().toLowerCase());
+
+  const splitCsvLine = (line) =>
+    line
+      .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+      .map(v => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+  const head = splitCsvLine(lines[0]).map(s=>s.trim().toLowerCase());
   return lines.slice(1).map(line => {
-    const cols = line.split(',');
+    const cols = splitCsvLine(line);
     const o = {};
     head.forEach((h,i)=> o[h]= (cols[i]||'').trim());
     return o;
