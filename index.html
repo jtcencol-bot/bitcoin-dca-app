@@ -786,7 +786,7 @@ $('analyzeShakepay').onclick = async () => {
         <div class="card"><div class="small">BTC Sent</div><b>${sentBtcUnits.toFixed(8)} BTC</b></div>
       </div>
       <div class="card" style="margin-top:10px"><div class="small">Net BTC Flow</div><b>${netBtcFlow.toFixed(8)} BTC</b></div>
-      ${assetMode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">ETH Bought</div><b>${buyEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Received</div><b>${recvEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sent</div><b>${sentEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">Net ETH Flow</div><b>${netEthFlow.toFixed(8)} ETH</b></div></div>` : ''}
+      ${mode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">ETH Bought</div><b>${buyEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Received</div><b>${recvEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sent</div><b>${sentEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">Net ETH Flow</div><b>${netEthFlow.toFixed(8)} ETH</b></div></div>` : ''}
       <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
     `;
   } catch (e) {
