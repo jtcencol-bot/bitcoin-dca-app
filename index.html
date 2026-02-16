@@ -599,7 +599,7 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">Dip ROI</div><b>${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
         <div class="card"><div class="small">Dip PnL (${quote})</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
       </div>
-      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' '+quote) : 'off'}.</p>`;
+      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode === 'bteth' ? 'BTC+ETH' : 'BTC only'}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' '+quote) : 'off'}.</p>`;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
@@ -679,6 +679,8 @@ $('analyzeShakepay').onclick = async () => {
     let rewardBtcUnits = 0;
     let recvUnits = 0;
     let sentUnits = 0;
+    let recvBtcUnits = 0, recvEthUnits = 0;
+    let sentBtcUnits = 0, sentEthUnits = 0;
 
     const rewardByDesc = {};
 
@@ -696,6 +698,8 @@ $('analyzeShakepay').onclick = async () => {
         }
       } else if (type === 'receive') {
         recvUnits += qty;
+        if ((r.assetCredited||'').toUpperCase() === 'BTC') recvBtcUnits += qty;
+        if ((r.assetCredited||'').toUpperCase() === 'ETH') recvEthUnits += qty;
       } else {
         const isCostBearingBtcAcquisition = (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
         if (isCostBearingBtcAcquisition) {
@@ -715,6 +719,8 @@ $('analyzeShakepay').onclick = async () => {
     }
 
     sentUnits = sentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
+    sentBtcUnits = sentRows.filter(r => (r.assetDebited||'').toUpperCase()==='BTC').reduce((sum,r)=>sum+(r.amountDebited||0),0);
+    sentEthUnits = sentRows.filter(r => (r.assetDebited||'').toUpperCase()==='ETH').reduce((sum,r)=>sum+(r.amountDebited||0),0);
 
     shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
@@ -744,25 +750,25 @@ $('analyzeShakepay').onclick = async () => {
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">ETH units credited</div><b>${buyEthUnits.toFixed(8)} ETH</b></div>
-        <div class="card"><div class="small">Total units credited (mixed)</div><b>${buyUnits.toFixed(8)}</b></div>
       </div>
       <div class="card" style="margin-top:10px">
         <div class="small">Shakepay Rewards Breakdown (BTC)</div>
         <p><b>Total rewards (BTC):</b> ${rewardBtcUnits.toFixed(8)} (${Math.round(rewardBtcUnits*SATS).toLocaleString()} sats)${rewardsFiatToday!=null ? ` ≈ <b>$${fmt(rewardsFiatToday)} ${quote}</b> today` : ''}</p>
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
-      <p class="small" style="margin-top:8px">Tip: keep DCA rules manual for accuracy; use Shakepay import mainly for analysis and rewards.</p>
     `;
 
-    const netFlow = buyUnits + rewardUnits + recvUnits - sentUnits;
+    const netBtcFlow = buyBtcUnits + rewardBtcUnits + recvBtcUnits - sentBtcUnits;
+    const netEthFlow = buyEthUnits + recvEthUnits - sentEthUnits;
     $('flowResult').innerHTML = `
       <div class="cards">
-        <div class="card"><div class="small">${esc(assets.join('/'))} Bought</div><b>${buyUnits.toFixed(8)}</b></div>
-        <div class="card"><div class="small">${esc(assets.join('/'))} Rewards</div><b>${rewardUnits.toFixed(8)}</b></div>
-        <div class="card"><div class="small">${esc(assets.join('/'))} Received</div><b>${recvUnits.toFixed(8)}</b></div>
-        <div class="card"><div class="small">${esc(assets.join('/'))} Sent</div><b>${sentUnits.toFixed(8)}</b></div>
+        <div class="card"><div class="small">BTC Bought</div><b>${buyBtcUnits.toFixed(8)} BTC</b></div>
+        <div class="card"><div class="small">BTC Rewards</div><b>${rewardBtcUnits.toFixed(8)} BTC</b></div>
+        <div class="card"><div class="small">BTC Received</div><b>${recvBtcUnits.toFixed(8)} BTC</b></div>
+        <div class="card"><div class="small">BTC Sent</div><b>${sentBtcUnits.toFixed(8)} BTC</b></div>
       </div>
-      <div class="card" style="margin-top:10px"><div class="small">Net Unit Flow (Bought + Rewards + Received - Sent)</div><b>${netFlow.toFixed(8)} ${esc(assets.join('/'))}</b></div>
+      <div class="card" style="margin-top:10px"><div class="small">Net BTC Flow</div><b>${netBtcFlow.toFixed(8)} BTC</b></div>
+      ${assetMode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">ETH Bought</div><b>${buyEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Received</div><b>${recvEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sent</div><b>${sentEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">Net ETH Flow</div><b>${netEthFlow.toFixed(8)} ETH</b></div></div>` : ''}
       <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
     `;
   } catch (e) {
