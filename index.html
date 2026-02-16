@@ -64,6 +64,9 @@
       <div><label>&nbsp;</label><button id="addRule">Add / Update Rule</button></div>
       <div><label>&nbsp;</label><button id="clearRules">Clear Rules</button></div>
     </div>
+    <div class="actions" style="margin-top:10px">
+      <button id="normalizeRules" type="button">Normalize Rules (remove duplicates)</button>
+    </div>
     <div id="ruleList" class="list" style="margin-top:10px"></div>
   </section>
 
@@ -218,6 +221,18 @@ $('addRule').onclick = () => {
   save(); render();
 };
 $('clearRules').onclick = () => { rules.splice(0, rules.length); save(); render(); };
+$('normalizeRules').onclick = () => {
+  if (!rules.length) return;
+  rules.sort((a,b)=>a.date.localeCompare(b.date));
+  const out = [];
+  for (const r of rules) {
+    const amt = Number(r.amount);
+    if (!out.length || Number(out[out.length-1].amount) !== amt) out.push({date:r.date, amount:amt});
+  }
+  rules.splice(0, rules.length, ...out);
+  save(); render();
+  $('status').textContent = `Normalized rules: ${out.length} effective change(s).`;
+};
 $('clearAll').onclick = () => {
   if (!confirm('Clear all rules, dip buys, saved inputs, and results?')) return;
   rules.splice(0, rules.length);
