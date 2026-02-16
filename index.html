@@ -90,26 +90,12 @@
   </section>
 
   <section class="panel">
-    <h2>Upload Transactions (validate / check)</h2>
-    <p class="small">CSV headers accepted: <code>date,type,amount_cad,price_cad,btc,sats,fee_cad</code>. Type can be buy/sell.</p>
+    <h2>Shakepay Import (recommended first step)</h2>
+    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app will import BTC buys, analyze rewards, and show BTC flow. ETH rows are ignored for now (future versions can include ETH).</p>
     <div class="grid g3">
-      <div><label>CSV File</label><input id="csvFile" type="file" accept=".csv,text/csv"></div>
-      <div><label>Tolerance (%)</label><input id="tol" type="number" min="0" step="0.01" value="0.5"></div>
-      <div><label>&nbsp;</label><button id="validateCsv">Validate CSV</button></div>
-    </div>
-    <div class="actions" style="margin-top:10px">
-      <button id="importCsvBuys" type="button">Import CSV Buys as Dip Buys</button>
-    </div>
-    <div id="csvResult" style="margin-top:10px"></div>
-  </section>
-
-  <section class="panel">
-    <h2>Shakepay Summary Import (BTC only)</h2>
-    <p class="small">Use <code>crypto_transactions_summary.csv</code> from Shakepay. ETH rows are ignored. This can import BTC buys into Dip Buys and break down rewards (ShakingSats, ShakeSquad, cashback, etc.).</p>
-    <div class="grid g3">
-      <div><label><input id="useShakepay" type="checkbox"> I use Shakepay</label></div>
       <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
       <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze + Import</button></div>
+      <div></div>
     </div>
     <div id="shakepayResult" style="margin-top:10px"></div>
   </section>
@@ -236,7 +222,7 @@ $('clearAll').onclick = () => {
   localStorage.removeItem('btc.rules');
   localStorage.removeItem('btc.dips');
   $('result').innerHTML = '';
-  $('csvResult').innerHTML = '';
+  if ($('csvResult')) $('csvResult').innerHTML = '';
   $('status').textContent = 'Cleared.';
   resetDipEditor();
   render();
@@ -371,105 +357,8 @@ function parseCsv(text){
   });
 }
 
-async function getCsvRows(){
-  const file = $('csvFile').files[0];
-  if (!file) throw new Error('Pick a CSV first.');
-  const text = await file.text();
-  const rows = parseCsv(text);
-  if (!rows.length) throw new Error('No rows found.');
-  return rows;
-}
-
-function num(v){
-  if (v == null) return 0;
-  const cleaned = String(v).replace(/[$,\s]/g,'');
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function normalizeShakepayRow(r){
-  return {
-    date: (r['date'] || '').trim(),
-    amountDebited: num(r['amount debited']),
-    assetDebited: (r['asset debited'] || '').trim().toUpperCase(),
-    amountCredited: num(r['amount credited']),
-    assetCredited: (r['asset credited'] || '').trim().toUpperCase(),
-    marketValue: num(r['market value']),
-    marketValueCurrency: (r['market value currency'] || '').trim().toUpperCase(),
-    bookCost: num(r['book cost']),
-    bookCostCurrency: (r['book cost currency'] || '').trim().toUpperCase(),
-    type: (r['type'] || '').trim(),
-    spotRate: num(r['spot rate']),
-    buySellRate: num(r['buy / sell rate']),
-    description: (r['description'] || '').trim() || '(Unlabeled)'
-  };
-}
-
-$('validateCsv').onclick = async () => {
-  try {
-    const tolPct = Number($('tol').value || 0.5);
-    const rows = await getCsvRows();
-
-    const issues = [];
-    let checked=0;
-    for (const [i,r] of rows.entries()) {
-      const type = (r.type||'buy').toLowerCase();
-      if (type !== 'buy' && type !== 'sell') continue;
-
-      const amount = Number(r.amount_cad||0);
-      const price = Number(r.price_cad||0);
-      const btc = Number(r.btc||0) || (Number(r.sats||0)/SATS);
-      if (!(amount>0 && price>0 && btc>0)) continue;
-
-      checked++;
-      const implied = amount/price;
-      const errPct = Math.abs((btc - implied)/implied)*100;
-      if (errPct > tolPct) issues.push({row:i+2, errPct, implied, btc, date:r.date||''});
-    }
-
-    if (!checked) {
-      $('csvResult').innerHTML = '<p class="small warn">No valid buy/sell rows with amount_cad + price_cad + btc/sats.</p>';
-      return;
-    }
-
-    $('csvResult').innerHTML = `
-      <p class="small">Checked ${checked} rows. Tolerance ${tolPct}%.</p>
-      ${issues.length ? `<p class="warn"><b>${issues.length} row(s) outside tolerance.</b></p>
-        <table><thead><tr><th>Row</th><th>Date</th><th>Your BTC</th><th>Implied BTC</th><th>Error %</th></tr></thead><tbody>
-        ${issues.slice(0,50).map(x=>`<tr><td>${x.row}</td><td>${x.date}</td><td>${x.btc.toFixed(8)}</td><td>${x.implied.toFixed(8)}</td><td>${x.errPct.toFixed(3)}%</td></tr>`).join('')}
-        </tbody></table>` : '<p class="ok"><b>No material mismatches found.</b></p>'}
-    `;
-  } catch (e) {
-    $('csvResult').innerHTML = `<p class="small warn">${e.message}</p>`;
-  }
-};
-
-$('importCsvBuys').onclick = async () => {
-  try {
-    const rows = await getCsvRows();
-    let imported = 0;
-    for (const r of rows) {
-      const type = (r.type||'buy').toLowerCase();
-      if (type !== 'buy') continue;
-      const date = (r.date||'').slice(0,10);
-      const amount = Number(r.amount_cad||0);
-      if (!date || !(amount>0)) continue;
-      const btc = Number(r.btc||0) || null;
-      const sats = !btc && Number(r.sats||0) ? Number(r.sats||0) : null;
-      const price = Number(r.price_cad||0) || null;
-      dips.push({date, amount, price, btc, sats});
-      imported++;
-    }
-    save(); render();
-    $('csvResult').innerHTML = `<p class="ok"><b>Imported ${imported} buy row(s) as dip buys.</b></p>`;
-  } catch (e) {
-    $('csvResult').innerHTML = `<p class="small warn">${e.message}</p>`;
-  }
-};
-
 $('analyzeShakepay').onclick = async () => {
   try {
-    if (!$('useShakepay').checked) throw new Error('Tick “I use Shakepay” first.');
     const file = $('shakepayFile').files[0];
     if (!file) throw new Error('Pick your Shakepay CSV first.');
 
