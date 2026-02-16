@@ -103,8 +103,17 @@
       <div><label>Fallback FX (USD→CAD)</label><input id="fx" type="number" min="0.5" step="0.0001" value="1.35"></div>
       <div><label>&nbsp;</label><button id="calc">Calculate Returns</button></div>
     </div>
-    <div class="actions" style="margin-top:10px">
-      <label class="small" style="display:flex;align-items:center;gap:8px"><input id="useShakepayLots" type="checkbox" checked> Include imported Shakepay buys in calculation</label>
+    <div class="grid g3" style="margin-top:10px">
+      <div>
+        <label>Calculation Mode</label>
+        <select id="calcMode">
+          <option value="rules">Rules only</option>
+          <option value="shakepay" selected>Shakepay only</option>
+          <option value="hybrid">Hybrid (advanced)</option>
+        </select>
+      </div>
+      <div><label>&nbsp;</label><span class="small">Rules only = DCA+Dip rules. Shakepay only = imported buys only. Hybrid = both (may overlap).</span></div>
+      <div></div>
     </div>
     <p id="status" class="small" style="margin-top:10px">Ready.</p>
     <div id="result" style="margin-top:10px"></div>
@@ -334,11 +343,13 @@ $('calc').onclick = async () => {
       sourceLabel = `CryptoCompare BTC/USD × FX ${fx}`;
     }
 
-    const useShakepayLots = $('useShakepayLots').checked;
+    const mode = $('calcMode').value;
+    const useRules = mode === 'rules' || mode === 'hybrid';
+    const useShakepayLots = mode === 'shakepay' || mode === 'hybrid';
     let invested=0, btc=0, dcaInvested=0, dipInvested=0, skipped=0;
     let dcaBtc=0, dipBtc=0, shakepayBtc=0, shakepayInvested=0;
 
-    if (rules.length) {
+    if (useRules && rules.length) {
       const start = rules.map(r=>r.date).sort()[0];
       for (let d=dateObj(start), end=new Date(); d<=end; d.setDate(d.getDate()+1)) {
         const k = dayKey(d);
@@ -351,7 +362,7 @@ $('calc').onclick = async () => {
       }
     }
 
-    for (const dip of dips) {
+    if (useRules) for (const dip of dips) {
       let btcGot = 0;
       if (dip.btc) btcGot = Number(dip.btc);
       else if (dip.sats) btcGot = Number(dip.sats)/SATS;
@@ -380,11 +391,19 @@ $('calc').onclick = async () => {
         lotsIncluded++;
       }
       if (lotsIncluded) status.textContent = `Included ${lotsIncluded} Shakepay buy lot(s) from upload.`;
-      if (rules.length && lotsIncluded) status.textContent += ' Warning: DCA rules + imported buys may overlap (possible double count).';
+      if (mode === 'hybrid' && rules.length && lotsIncluded) status.textContent += ' Warning: Hybrid mode may overlap DCA rules and imported buys.';
     }
 
-    if (!rules.length && !dips.length && !(useShakepayLots && shakepayBuyLots.length)) {
-      throw new Error('No inputs to calculate. Add rules/dips or import Shakepay and enable imported buys.');
+    const hasRuleInputs = rules.length || dips.length;
+    const hasShakepayInputs = shakepayBuyLots.length;
+    if ((useRules && !hasRuleInputs) && (useShakepayLots && !hasShakepayInputs)) {
+      throw new Error('No inputs for selected mode. Add rules/dips and/or import Shakepay first.');
+    }
+    if (useRules && !useShakepayLots && !hasRuleInputs) {
+      throw new Error('Rules only mode selected, but no rules/dips found.');
+    }
+    if (useShakepayLots && !useRules && !hasShakepayInputs) {
+      throw new Error('Shakepay only mode selected, but no imported Shakepay buys found.');
     }
 
     const current = priceForDate(map, new Date());
@@ -422,7 +441,7 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">Dip ROI</div><b>${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
         <div class="card"><div class="small">Dip PnL (CAD)</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
       </div>
-      <p class="small" style="margin-top:10px">Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' CAD, '+shakepayBtc.toFixed(8)+' BTC') : 'off'}.</p>`;
+      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' CAD, '+shakepayBtc.toFixed(8)+' BTC') : 'off'}.</p>`;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
