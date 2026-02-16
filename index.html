@@ -40,6 +40,16 @@
   </div>
 
   <section class="panel">
+    <h2>Shakepay Import (recommended first step)</h2>
+    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app imports BTC buys, analyzes rewards, and shows BTC flow. ETH rows are ignored for now (future versions can include ETH). If you do not use Shakepay, enter your information manually below.</p>
+    <div class="grid g3">
+      <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
+      <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze + Import</button></div>
+      <div></div>
+    </div>
+    <div id="shakepayResult" style="margin-top:10px"></div>
+  </section>
+  <section class="panel">
     <h2>DCA Rules (daily CAD)</h2>
     <div class="grid g4">
       <div>
@@ -89,16 +99,6 @@
     <div id="result" style="margin-top:10px"></div>
   </section>
 
-  <section class="panel">
-    <h2>Shakepay Import (recommended first step)</h2>
-    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app will import BTC buys, analyze rewards, and show BTC flow. ETH rows are ignored for now (future versions can include ETH).</p>
-    <div class="grid g3">
-      <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
-      <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze + Import</button></div>
-      <div></div>
-    </div>
-    <div id="shakepayResult" style="margin-top:10px"></div>
-  </section>
 
   <section class="panel">
     <h2>BTC Flow Summary (Shakepay CSV)</h2>
