@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bitcoin DCA Calculator (CAD)</title>
   <style>
-    :root{--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--text:#ecf0ff;--muted:#a6b2d1;--ok:#22c55e;--warn:#f59e0b}
+    :root{--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--text:#ecf0ff;--muted:#a6b2d1;--ok:#22c55e;--warn:#f59e0b;--accent:#f7931a}
+body.mode-btc{--accent:#f7931a}
+body.mode-bteth{--accent:#60a5fa}
     *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
     .wrap{max-width:1080px;margin:0 auto;padding:18px} .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
     h1{margin:0 0 8px} .sub{color:var(--muted);margin:0 0 12px} label{display:block;color:var(--muted);margin:6px 0 4px}
     input,button,select{width:100%;padding:10px;border-radius:10px;border:1px solid #3a4670;background:#0f1630;color:var(--text)}
     button{background:#22305c;cursor:pointer;font-weight:700} .grid{display:grid;gap:10px}
+    h1{color:var(--accent)}
     .g5{grid-template-columns:repeat(5,1fr)} .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)}
     .list{display:grid;gap:8px}.item{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:8px}
     .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.card{background:#0f1630;border:1px solid #3a4670;border-radius:10px;padding:10px}
@@ -30,10 +33,14 @@
   <div class="hero">
     <div>
       <h1 style="margin:0;">Bitcoin DCA Calculator (CAD)</h1>
-      <p class="sub" style="margin:6px 0 8px;">DCA = <b>Dollar-Cost Averaging</b> (aka recurring buys over time). Track recurring buys, dip buys, and estimated returns in CAD.</p>
+      <p class="sub" style="margin:6px 0 8px;">DCA = <b>Dollar-Cost Averaging</b> (aka recurring buys over time). Track recurring buys, dip buys, and estimated returns in CAD. Toggle BTC-only vs BTC+ETH at top.</p>
       <span class="pill">Not financial/tax advice</span>
     </div>
     <div class="actions">
+      <select id="assetMode" style="width:auto">
+        <option value="btc">BTC only</option>
+        <option value="bteth">BTC + ETH</option>
+      </select>
       <button id="helpBtn" type="button">Help</button>
       <button id="demoBtn" type="button">Load Demo Data</button>
       <button id="clearAll" type="button" style="background:#5b1f2a;border-color:#7a2a39;">Clear All</button>
@@ -135,6 +142,16 @@
     <p class="small">Visibility only: buys, rewards, received, sent, and net flow from imported Shakepay BTC rows.</p>
     <div id="flowResult"></div>
   </section>
+
+  <section class="panel">
+    <h2>Support / Donate</h2>
+    <p class="small">If this tool helped you, tips are appreciated 🙏</p>
+    <div class="grid g3">
+      <div class="item"><div><b>Lightning</b></div><div class="small" id="donLn">crypt0jt@shakepay.me</div><button class="chip" type="button" onclick="copyDonate('donLn')">Copy</button></div>
+      <div class="item"><div><b>ETH</b></div><div class="small" id="donEth">crypt0jt.eth</div><button class="chip" type="button" onclick="copyDonate('donEth')">Copy</button></div>
+      <div class="item"><div><b>Shakepay handle</b></div><div class="small" id="donSp">crypt0jt</div><button class="chip" type="button" onclick="copyDonate('donSp')">Copy</button></div>
+    </div>
+  </section>
 </div>
 
 <dialog id="helpDialog">
@@ -189,6 +206,26 @@ const esc = (s='') => String(s)
   .replace(/'/g,'&#39;');
 
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
+function applyMode(mode){
+  document.body.classList.remove('mode-btc','mode-bteth');
+  document.body.classList.add(mode === 'bteth' ? 'mode-bteth' : 'mode-btc');
+}
+window.copyDonate = async (id) => {
+  const txt = $(id)?.textContent?.trim() || '';
+  if (!txt) return;
+  try { await navigator.clipboard.writeText(txt); $('status').textContent = `Copied: ${txt}`; }
+  catch { $('status').textContent = 'Copy failed; please copy manually.'; }
+};
+
+const savedMode = localStorage.getItem('btc.assetMode') || 'btc';
+$('assetMode').value = savedMode;
+applyMode(savedMode);
+$('assetMode').onchange = () => {
+  const mode = $('assetMode').value;
+  localStorage.setItem('btc.assetMode', mode);
+  applyMode(mode);
+};
+
 $('pickRDate').onclick = () => openPicker($('rDate'));
 $('pickDDate').onclick = () => openPicker($('dDate'));
 $('sortDipDate').onclick = () => { dipSortMode = 'date'; render(); };
@@ -583,12 +620,15 @@ $('analyzeShakepay').onclick = async () => {
     const rows = parseCsv(text).map(normalizeShakepayRow);
     if (!rows.length) throw new Error('No rows found in Shakepay file.');
 
-    const btcRows = rows.filter(r => r.assetCredited === 'BTC');
-    if (!btcRows.length) throw new Error('No BTC rows found.');
+    const mode = $('assetMode').value;
+    const assets = mode === 'bteth' ? ['BTC','ETH'] : ['BTC'];
 
-    const btcSentRows = rows.filter(r => r.assetDebited === 'BTC');
+    const assetRows = rows.filter(r => assets.includes(r.assetCredited));
+    if (!assetRows.length) throw new Error(`No ${assets.join('/')} rows found.`);
 
-    const dates = btcRows.map(r => r.date).filter(Boolean).sort();
+    const sentRows = rows.filter(r => assets.includes(r.assetDebited));
+
+    const dates = assetRows.map(r => r.date).filter(Boolean).sort();
     const start = dates[0] || 'n/a';
     const end = dates[dates.length-1] || 'n/a';
 
@@ -601,7 +641,7 @@ $('analyzeShakepay').onclick = async () => {
 
     const rewardByDesc = {};
 
-    for (const r of btcRows) {
+    for (const r of assetRows) {
       const type = r.type.toLowerCase();
       const date = (r.date || '').slice(0,10);
       const btc = r.amountCredited || 0;
@@ -626,18 +666,20 @@ $('analyzeShakepay').onclick = async () => {
       }
     }
 
-    sentBtc = btcSentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
+    sentBtc = sentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
 
     shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
 
     let rewardsCadToday = null;
-    try {
-      const cadRows = await fetchCC('CAD', 10);
-      const cadMap = toDailyMapCC(cadRows, 1);
-      const cadNow = priceForDate(cadMap, new Date());
-      if (cadNow) rewardsCadToday = rewardBtc * cadNow;
-    } catch {}
+    if (assets.length === 1 && assets[0] === 'BTC') {
+      try {
+        const cadRows = await fetchCC('CAD', 10);
+        const cadMap = toDailyMapCC(cadRows, 1);
+        const cadNow = priceForDate(cadMap, new Date());
+        if (cadNow) rewardsCadToday = rewardBtc * cadNow;
+      } catch {}
+    }
 
     save(); render();
 
@@ -649,14 +691,14 @@ $('analyzeShakepay').onclick = async () => {
     $('shakepayResult').innerHTML = `
       <p class="ok"><b>Shakepay import complete.</b></p>
       <div class="cards" style="margin-top:8px">
-        <div class="card"><div class="small">Date range (BTC rows)</div><b>${esc(start)} → ${esc(end)}</b></div>
-        <div class="card"><div class="small">BTC buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
-        <div class="card"><div class="small">Total BTC buy CAD (all buys)</div><b>$${fmt(buyCad)}</b></div>
-        <div class="card"><div class="small">Total BTC bought (all buys)</div><b>${buyBtc.toFixed(8)} BTC</b></div>
+        <div class="card"><div class="small">Date range (${esc(assets.join('/'))} rows)</div><b>${esc(start)} → ${esc(end)}</b></div>
+        <div class="card"><div class="small">${esc(assets.join('/'))} buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
+        <div class="card"><div class="small">Total buy CAD (all selected assets)</div><b>$${fmt(buyCad)}</b></div>
+        <div class="card"><div class="small">Total credited units (${esc(assets.join('/'))})</div><b>${buyBtc.toFixed(8)}</b></div>
       </div>
       <div class="card" style="margin-top:10px">
-        <div class="small">Rewards breakdown (BTC only)</div>
-        <p><b>Total rewards:</b> ${rewardBtc.toFixed(8)} BTC (${Math.round(rewardBtc*SATS).toLocaleString()} sats)${rewardsCadToday!=null ? ` ≈ <b>$${fmt(rewardsCadToday)} CAD</b> today` : ''}</p>
+        <div class="small">Rewards breakdown (${esc(assets.join('/'))})</div>
+        <p><b>Total rewards:</b> ${rewardBtc.toFixed(8)} ${esc(assets.join('/'))}${assets.length===1&&assets[0]==='BTC'?` (${Math.round(rewardBtc*SATS).toLocaleString()} sats)`:''}${rewardsCadToday!=null ? ` ≈ <b>$${fmt(rewardsCadToday)} CAD</b> today` : ''}</p>
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
       <p class="small" style="margin-top:8px">Tip: keep DCA rules manual for accuracy; use Shakepay import mainly for analysis and rewards.</p>
