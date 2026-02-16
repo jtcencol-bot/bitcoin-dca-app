@@ -357,6 +357,31 @@ function parseCsv(text){
   });
 }
 
+function num(v){
+  if (v == null) return 0;
+  const cleaned = String(v).replace(/[$,\s]/g,'');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeShakepayRow(r){
+  return {
+    date: (r['date'] || '').trim(),
+    amountDebited: num(r['amount debited']),
+    assetDebited: (r['asset debited'] || '').trim().toUpperCase(),
+    amountCredited: num(r['amount credited']),
+    assetCredited: (r['asset credited'] || '').trim().toUpperCase(),
+    marketValue: num(r['market value']),
+    marketValueCurrency: (r['market value currency'] || '').trim().toUpperCase(),
+    bookCost: num(r['book cost']),
+    bookCostCurrency: (r['book cost currency'] || '').trim().toUpperCase(),
+    type: (r['type'] || '').trim(),
+    spotRate: num(r['spot rate']),
+    buySellRate: num(r['buy / sell rate']),
+    description: (r['description'] || '').trim() || '(Unlabeled)'
+  };
+}
+
 $('analyzeShakepay').onclick = async () => {
   try {
     const file = $('shakepayFile').files[0];
