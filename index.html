@@ -112,11 +112,11 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
   </section>
 
   <section class="panel">
-    <h2>Price Source & Calculate</h2>
+    <h2>Returns Calculator</h2>
     <div class="grid g3">
       <div><label>Price source</label><input value="CryptoCompare historical daily" disabled></div>
       <div><label>FX (CAD per USD, used for CAD↔USD conversion)</label><input id="fx" type="number" min="0.5" step="0.0001" value="1.35"></div>
-      <div><label>&nbsp;</label><button id="calc">Calculate Returns</button></div>
+      <div><label>&nbsp;</label><button id="calc">Update Calculated Returns</button></div>
     </div>
     <div class="grid g3" style="margin-top:10px">
       <div>
@@ -598,7 +598,7 @@ $('calc').onclick = async () => {
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">Current BTC Price</div><b>$${fmt(current)}</b></div>
-        <div class="card"><div class="small">Current ETH Price</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>
+        ${assetMode === 'bteth' ? `<div class="card"><div class="small">Current ETH Price</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>` : ''}
         <div class="card"><div class="small">Portfolio Value</div><b>$${fmt(value)}</b></div>
         <div class="card"><div class="small">Total PnL</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
       </div>
@@ -606,11 +606,9 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">Total ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
         <div class="card"><div class="small">Total BTC ROI</div><b class="${assetStats.BTC.invested?((((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100)>=0)?'ok':'warn'):''}">${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
         <div class="card"><div class="small">Total BTC PnL</div><b class="${((assetStats.BTC.qty*current-assetStats.BTC.invested)>=0)?'ok':'warn'}">${assetStats.BTC.invested?('$'+fmt(assetStats.BTC.qty*current-assetStats.BTC.invested)):'n/a'}</b></div>
-        <div class="card"><div class="small">Total ETH ROI</div><b class="${(assetStats.ETH.invested&&currentEth)?((((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100)>=0)?'ok':'warn'):''}">${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        ${assetMode === 'bteth' ? `<div class="card"><div class="small">Total ETH ROI</div><b class="${(assetStats.ETH.invested&&currentEth)?((((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100)>=0)?'ok':'warn'):''}">${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>` : ''}
       </div>
-      <div class="cards" style="margin-top:10px">
-        <div class="card"><div class="small">Total ETH PnL</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
-      </div>
+      ${assetMode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">Total ETH PnL</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div></div>` : ''}
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">Total DCA ROI</div><b class="${dcaRoi==null?'':(dcaRoi>=0?'ok':'warn')}">${dcaRoi==null?'n/a':dcaRoi.toFixed(2)+'%'}</b></div>
         <div class="card"><div class="small">Total DCA PnL</div><b class="${dcaRoi==null?'':(dcaPnl>=0?'ok':'warn')}">${dcaRoi==null?'n/a':'$'+fmt(dcaPnl)}</b></div>
@@ -789,6 +787,9 @@ $('analyzeShakepay').onclick = async () => {
       ${mode === 'bteth' ? `<div class="cards" style="margin-top:10px"><div class="card"><div class="small">ETH Bought</div><b>${buyEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Received</div><b>${recvEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">ETH Sent</div><b>${sentEthUnits.toFixed(8)} ETH</b></div><div class="card"><div class="small">Net ETH Flow</div><b>${netEthFlow.toFixed(8)} ETH</b></div></div>` : ''}
       <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
     `;
+
+    // Auto-calculate once right after successful import/analyze
+    $('calc').click();
   } catch (e) {
     $('shakepayResult').innerHTML = `<p class="small warn">${esc(e.message)}</p>`;
     $('flowResult').innerHTML = '';
