@@ -6,8 +6,8 @@
   <title>Bitcoin DCA Calculator (CAD)</title>
   <style>
     :root{--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--text:#ecf0ff;--muted:#a6b2d1;--ok:#22c55e;--warn:#f59e0b;--accent:#f7931a}
-body.mode-btc{--accent:#f7931a}
-body.mode-bteth{--accent:#60a5fa}
+body.mode-btc{--accent:#f7931a;--bg:#1a1106;--panel:#26180a;--line:#5c3a12;--muted:#e5c39b}
+body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--muted:#a6b2d1}
     *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
     .wrap{max-width:1080px;margin:0 auto;padding:18px} .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
     h1{margin:0 0 8px} .sub{color:var(--muted);margin:0 0 12px} label{display:block;color:var(--muted);margin:6px 0 4px}
@@ -32,7 +32,7 @@ body.mode-bteth{--accent:#60a5fa}
 <div class="wrap">
   <div class="hero">
     <div>
-      <h1 style="margin:0;">Bitcoin DCA Calculator (CAD)</h1>
+      <h1 id="appTitle" style="margin:0;">Bitcoin DCA Calculator (CAD)</h1>
       <p class="sub" style="margin:6px 0 8px;">DCA = <b>Dollar-Cost Averaging</b> (aka recurring buys over time). Track recurring buys, dip buys, and estimated returns in CAD. Toggle BTC-only vs BTC+ETH at top.</p>
       <span class="pill">Not financial/tax advice</span>
     </div>
@@ -49,7 +49,7 @@ body.mode-bteth{--accent:#60a5fa}
 
   <section class="panel">
     <h2>Shakepay Import (recommended first step)</h2>
-    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. The app imports BTC buys, analyzes rewards, and shows BTC flow. ETH rows are ignored for now (future versions can include ETH). If you do not use Shakepay, enter your information manually below. Data is processed in-browser and saved only to this browser profile.</p>
+    <p class="small">If you use Shakepay, upload <code>crypto_transactions_summary.csv</code> first to save time. Asset mode controls whether BTC-only rows or BTC+ETH rows are included in analysis. If you do not use Shakepay, enter your information manually below. Data is processed in-browser and saved only to this browser profile.</p>
     <div class="grid g3">
       <div><label>Shakepay CSV</label><input id="shakepayFile" type="file" accept=".csv,text/csv"></div>
       <div><label>&nbsp;</label><button id="analyzeShakepay" type="button">Analyze Shakepay</button></div>
@@ -138,8 +138,8 @@ body.mode-bteth{--accent:#60a5fa}
 
 
   <section class="panel">
-    <h2>BTC Flow Summary (Shakepay CSV)</h2>
-    <p class="small">Visibility only: buys, rewards, received, sent, and net flow from imported Shakepay BTC rows.</p>
+    <h2>Asset Flow Summary (Shakepay CSV)</h2>
+    <p class="small">Visibility only: buys, rewards, received, sent, and net flow from imported Shakepay rows (based on selected asset mode).</p>
     <div id="flowResult"></div>
   </section>
 
@@ -179,7 +179,7 @@ const dips = (jget('btc.dips', []) || [])
   .filter(d => d.date && d.amount > 0);
 const shakepayBuyLots = (jget('btc.shakepayBuyLots', []) || [])
   .filter(l => l && typeof l === 'object')
-  .map(l => ({date: String(l.date || '').slice(0,10), amount: Number(l.amount||0), btc: Number(l.btc||0), price: l.price==null?null:Number(l.price)}))
+  .map(l => ({date: String(l.date || '').slice(0,10), amount: Number(l.amount||0), btc: Number(l.btc||0), asset: String(l.asset||'BTC').toUpperCase(), price: l.price==null?null:Number(l.price)}))
   .filter(l => l.date && l.amount > 0);
 let editingDipIndex = null;
 let dipSortMode = 'date';
@@ -199,7 +199,9 @@ const esc = (s='') => String(s)
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
 function applyMode(mode){
   document.body.classList.remove('mode-btc','mode-bteth');
-  document.body.classList.add(mode === 'bteth' ? 'mode-bteth' : 'mode-btc');
+  const bteth = mode === 'bteth';
+  document.body.classList.add(bteth ? 'mode-bteth' : 'mode-btc');
+  $('appTitle').textContent = bteth ? 'Bitcoin/ETH DCA Calculator (CAD)' : 'Bitcoin DCA Calculator (CAD)';
 }
 const savedMode = localStorage.getItem('btc.assetMode') || 'btc';
 $('assetMode').value = savedMode;
@@ -298,8 +300,8 @@ function dcaAmountOnDate(dateStr){
   return isRuleHit(applied, d) ? Number(applied.amount) : 0;
 }
 
-async function fetchCC(tsym, limit=2000){
-  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=BTC&tsym=${tsym}&limit=${limit}`;
+async function fetchCC(tsym, limit=2000, fsym='BTC'){
+  const url = `https://min-api.cryptocompare.com/data/v2/histoday?fsym=${fsym}&tsym=${tsym}&limit=${limit}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Price API failed: ${res.status}`);
   const json = await res.json();
@@ -415,9 +417,10 @@ $('extractDipsFromShakepay').onclick = () => {
 
   let added = 0;
   for (const lot of shakepayBuyLots) {
+    if ((lot.asset || 'BTC') !== 'BTC') continue;
     if (Number(lot.amount) < minCad) continue;
-    const key = `${lot.date}|${Number(lot.amount).toFixed(2)}|${Number(lot.btc||0).toFixed(8)}`;
-    const exists = dips.some(d => `${d.date}|${Number(d.amount).toFixed(2)}|${Number(d.btc||0).toFixed(8)}` === key);
+    const key = `BTC|${lot.date}|${Number(lot.amount).toFixed(2)}|${Number(lot.btc||0).toFixed(8)}`;
+    const exists = dips.some(d => `BTC|${d.date}|${Number(d.amount).toFixed(2)}|${Number(d.btc||0).toFixed(8)}` === key);
     if (exists) continue;
     dips.push({date: lot.date, amount: Number(lot.amount), price: lot.price || null, btc: Number(lot.btc)||null, sats: null});
     added++;
@@ -434,23 +437,31 @@ $('calc').onclick = async () => {
     const source = $('source').value;
     const fx = Number($('fx').value || 1.35);
 
-    let map = {};
+    const assetMode = $('assetMode').value;
+    const activeAssets = assetMode === 'bteth' ? ['BTC','ETH'] : ['BTC'];
+
+    const maps = {};
     let sourceLabel = '';
-    if (source === 'cc-cad') {
-      const rows = await fetchCC('CAD', 2000);
-      map = toDailyMapCC(rows, 1);
-      sourceLabel = 'CryptoCompare BTC/CAD (OHLC avg/day)';
-    } else {
-      const rows = await fetchCC('USD', 2000);
-      map = toDailyMapCC(rows, fx);
-      sourceLabel = `CryptoCompare BTC/USD × FX ${fx}`;
+    for (const a of activeAssets) {
+      if (source === 'cc-cad') {
+        const rows = await fetchCC('CAD', 2000, a);
+        maps[a] = toDailyMapCC(rows, 1);
+      } else {
+        const rows = await fetchCC('USD', 2000, a);
+        maps[a] = toDailyMapCC(rows, fx);
+      }
     }
+    sourceLabel = source === 'cc-cad'
+      ? `CryptoCompare ${activeAssets.join('/')} CAD (OHLC avg/day)`
+      : `CryptoCompare ${activeAssets.join('/')} USD × FX ${fx}`;
+    const map = maps['BTC'];
 
     const mode = $('calcMode').value;
     const useRules = mode === 'rules' || mode === 'hybrid';
     const useShakepayLots = mode === 'shakepay' || mode === 'hybrid';
     let invested=0, btc=0, dcaInvested=0, dipInvested=0, skipped=0;
     let dcaBtc=0, dipBtc=0, shakepayBtc=0, shakepayInvested=0;
+    const assetStats = { BTC:{invested:0, qty:0}, ETH:{invested:0, qty:0} };
 
     if (useRules && rules.length) {
       const start = rules.map(r=>r.date).sort()[0];
@@ -462,6 +473,7 @@ $('calc').onclick = async () => {
         if (!px) { skipped++; continue; }
         const got = amount/px;
         invested += amount; dcaInvested += amount; btc += got; dcaBtc += got;
+        assetStats.BTC.invested += amount; assetStats.BTC.qty += got;
       }
     }
 
@@ -479,18 +491,24 @@ $('calc').onclick = async () => {
       dipInvested += Number(dip.amount);
       btc += btcGot;
       dipBtc += btcGot;
+      assetStats.BTC.invested += Number(dip.amount); assetStats.BTC.qty += btcGot;
     }
 
     if (useShakepayLots && shakepayBuyLots.length) {
-      const dipKeys = new Set(dips.map(d => `${d.date}|${Number(d.amount).toFixed(2)}|${(Number(d.btc||0)).toFixed(8)}`));
+      const dipKeys = new Set(dips.map(d => `BTC|${d.date}|${Number(d.amount).toFixed(2)}|${(Number(d.btc||0)).toFixed(8)}`));
       let lotsIncluded = 0;
       for (const lot of shakepayBuyLots) {
-        const key = `${lot.date}|${Number(lot.amount).toFixed(2)}|${(Number(lot.btc||0)).toFixed(8)}`;
-        if (dipKeys.has(key)) continue; // avoid double-count if same buy already imported as dip
+        const asset = (lot.asset || 'BTC').toUpperCase();
+        const key = `${asset}|${lot.date}|${Number(lot.amount).toFixed(2)}|${(Number(lot.btc||0)).toFixed(8)}`;
+        if (asset === 'BTC' && dipKeys.has(key)) continue; // avoid double-count if same BTC buy already imported as dip
         invested += Number(lot.amount);
-        btc += Number(lot.btc || 0);
+        const qty = Number(lot.btc || 0);
+        if (asset === 'BTC') shakepayBtc += qty;
         shakepayInvested += Number(lot.amount);
-        shakepayBtc += Number(lot.btc || 0);
+        assetStats[asset] = assetStats[asset] || {invested:0, qty:0};
+        assetStats[asset].invested += Number(lot.amount);
+        assetStats[asset].qty += qty;
+        btc += asset === 'BTC' ? qty : 0;
         lotsIncluded++;
       }
       if (lotsIncluded) status.textContent = `Included ${lotsIncluded} Shakepay buy lot(s) from upload.`;
@@ -509,11 +527,12 @@ $('calc').onclick = async () => {
       throw new Error('Shakepay only mode selected, but no imported Shakepay buys found.');
     }
 
-    const current = priceForDate(map, new Date());
+    const current = priceForDate(maps['BTC'], new Date());
     if (!current) throw new Error('Could not get recent BTC price from source.');
+    const currentEth = maps['ETH'] ? priceForDate(maps['ETH'], new Date()) : null;
     localStorage.setItem('btc.lastCurrentPriceCad', String(current));
 
-    const value = btc * current;
+    const value = (assetStats.BTC.qty * current) + (assetStats.ETH.qty * (currentEth || 0));
     const pnl = value - invested;
     const roi = invested ? (pnl/invested)*100 : 0;
 
@@ -532,13 +551,19 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">Total Invested (CAD)</div><b>$${fmt(invested)}</b></div>
         <div class="card"><div class="small">From DCA (CAD)</div><b>$${fmt(dcaInvested)}</b></div>
         <div class="card"><div class="small">From Dip Buys (CAD)</div><b>$${fmt(dipInvested)}</b></div>
-        <div class="card"><div class="small">Estimated BTC</div><b>${btc.toFixed(8)} BTC</b></div>
+        <div class="card"><div class="small">Estimated BTC</div><b>${assetStats.BTC.qty.toFixed(8)} BTC</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">Current BTC Price (CAD)</div><b>$${fmt(current)}</b></div>
+        <div class="card"><div class="small">Current ETH Price (CAD)</div><b>${currentEth?('$'+fmt(currentEth)):'n/a'}</b></div>
         <div class="card"><div class="small">Portfolio Value (CAD)</div><b>$${fmt(value)}</b></div>
         <div class="card"><div class="small">PnL (CAD)</div><b class="${pnl>=0?'ok':'warn'}">$${fmt(pnl)}</b></div>
+      </div>
+      <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">ROI</div><b class="${roi>=0?'ok':'warn'}">${roi.toFixed(2)}%</b></div>
+        <div class="card"><div class="small">BTC ROI (all BTC sources)</div><b>${assetStats.BTC.invested?(((assetStats.BTC.qty*current-assetStats.BTC.invested)/assetStats.BTC.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        <div class="card"><div class="small">ETH ROI (all ETH sources)</div><b>${(assetStats.ETH.invested&&currentEth)?(((assetStats.ETH.qty*currentEth-assetStats.ETH.invested)/assetStats.ETH.invested*100).toFixed(2)+'%'):'n/a'}</b></div>
+        <div class="card"><div class="small">ETH PnL (CAD)</div><b class="${((assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)>=0)?'ok':'warn'}">${assetStats.ETH.invested?('$'+fmt(assetStats.ETH.qty*(currentEth||0)-assetStats.ETH.invested)):'n/a'}</b></div>
       </div>
       <div class="cards" style="margin-top:10px">
         <div class="card"><div class="small">DCA ROI</div><b>${dcaRoi==null?'n/a':dcaRoi.toFixed(2)+'%'}</b></div>
@@ -546,7 +571,7 @@ $('calc').onclick = async () => {
         <div class="card"><div class="small">Dip ROI</div><b>${dipRoi==null?'n/a':dipRoi.toFixed(2)+'%'}</b></div>
         <div class="card"><div class="small">Dip PnL (CAD)</div><b class="${dipRoi==null?'':(dipPnl>=0?'ok':'warn')}">${dipRoi==null?'n/a':'$'+fmt(dipPnl)}</b></div>
       </div>
-      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' CAD, '+shakepayBtc.toFixed(8)+' BTC') : 'off'}.</p>`;
+      <p class="small" style="margin-top:10px">Mode: <b>${mode}</b>. Asset mode: <b>${assetMode}</b>. Skipped days/entries due to missing price data: ${skipped}. Imported Shakepay buys included: ${useShakepayLots ? ('$'+fmt(shakepayInvested)+' CAD') : 'off'}.</p>`;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
@@ -617,40 +642,40 @@ $('analyzeShakepay').onclick = async () => {
     const end = dates[dates.length-1] || 'n/a';
 
     let buyCad = 0;
-    let buyBtc = 0;
+    let buyUnits = 0;
     const parsedBuyLots = [];
-    let rewardBtc = 0;
-    let recvBtc = 0;
-    let sentBtc = 0;
+    let rewardUnits = 0;
+    let recvUnits = 0;
+    let sentUnits = 0;
 
     const rewardByDesc = {};
 
     for (const r of assetRows) {
       const type = r.type.toLowerCase();
       const date = (r.date || '').slice(0,10);
-      const btc = r.amountCredited || 0;
-      const sats = Math.round(btc * SATS);
+      const qty = r.amountCredited || 0;
+      const sats = r.assetCredited === 'BTC' ? Math.round(qty * SATS) : 0;
 
       if (type === 'reward') {
-        rewardBtc += btc;
-        rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + sats;
+        rewardUnits += qty;
+        rewardByDesc[r.description] = (rewardByDesc[r.description] || 0) + (r.assetCredited === 'BTC' ? sats : qty);
       } else if (type === 'receive') {
-        recvBtc += btc;
+        recvUnits += qty;
       } else {
         const isCostBearingBtcAcquisition = (type === 'buy' || type === 'convert' || type === 'other') && ((r.bookCost > 0) || (r.marketValue > 0));
         if (isCostBearingBtcAcquisition) {
           const amount = r.bookCost > 0 ? r.bookCost : r.marketValue;
           const price = r.buySellRate > 0 ? r.buySellRate : (r.spotRate > 0 ? r.spotRate : null);
-          if (date && amount > 0) parsedBuyLots.push({date, amount, btc: btc || 0, price: price || null});
+          if (date && amount > 0) parsedBuyLots.push({date, amount, btc: qty || 0, asset: r.assetCredited || 'BTC', price: price || null});
           if (amount > 0) {
             buyCad += amount;
-            buyBtc += btc;
+            buyUnits += qty;
           }
         }
       }
     }
 
-    sentBtc = sentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
+    sentUnits = sentRows.reduce((sum, r) => sum + (r.amountDebited || 0), 0);
 
     shakepayBuyLots.splice(0, shakepayBuyLots.length, ...parsedBuyLots);
     localStorage.setItem('btc.shakepayBuyLots', JSON.stringify(shakepayBuyLots));
@@ -661,7 +686,7 @@ $('analyzeShakepay').onclick = async () => {
         const cadRows = await fetchCC('CAD', 10);
         const cadMap = toDailyMapCC(cadRows, 1);
         const cadNow = priceForDate(cadMap, new Date());
-        if (cadNow) rewardsCadToday = rewardBtc * cadNow;
+        if (cadNow) rewardsCadToday = rewardUnits * cadNow;
       } catch {}
     }
 
@@ -678,25 +703,25 @@ $('analyzeShakepay').onclick = async () => {
         <div class="card"><div class="small">Date range (${esc(assets.join('/'))} rows)</div><b>${esc(start)} → ${esc(end)}</b></div>
         <div class="card"><div class="small">${esc(assets.join('/'))} buy rows parsed from file</div><b>${parsedBuyLots.length}</b></div>
         <div class="card"><div class="small">Total buy CAD (all selected assets)</div><b>$${fmt(buyCad)}</b></div>
-        <div class="card"><div class="small">Total credited units (${esc(assets.join('/'))})</div><b>${buyBtc.toFixed(8)}</b></div>
+        <div class="card"><div class="small">Total credited units (${esc(assets.join('/'))})</div><b>${buyUnits.toFixed(8)}</b></div>
       </div>
       <div class="card" style="margin-top:10px">
         <div class="small">Rewards breakdown (${esc(assets.join('/'))})</div>
-        <p><b>Total rewards:</b> ${rewardBtc.toFixed(8)} ${esc(assets.join('/'))}${assets.length===1&&assets[0]==='BTC'?` (${Math.round(rewardBtc*SATS).toLocaleString()} sats)`:''}${rewardsCadToday!=null ? ` ≈ <b>$${fmt(rewardsCadToday)} CAD</b> today` : ''}</p>
+        <p><b>Total rewards:</b> ${rewardUnits.toFixed(8)} ${esc(assets.join('/'))}${assets.length===1&&assets[0]==='BTC'?` (${Math.round(rewardUnits*SATS).toLocaleString()} sats)`:''}${rewardsCadToday!=null ? ` ≈ <b>$${fmt(rewardsCadToday)} CAD</b> today` : ''}</p>
         ${rewardRows ? `<table><thead><tr><th>Reward source</th><th>Sats</th><th>BTC</th></tr></thead><tbody>${rewardRows}</tbody></table>` : '<p class="small">No reward rows found.</p>'}
       </div>
       <p class="small" style="margin-top:8px">Tip: keep DCA rules manual for accuracy; use Shakepay import mainly for analysis and rewards.</p>
     `;
 
-    const netFlow = buyBtc + rewardBtc + recvBtc - sentBtc;
+    const netFlow = buyUnits + rewardUnits + recvUnits - sentUnits;
     $('flowResult').innerHTML = `
       <div class="cards">
-        <div class="card"><div class="small">BTC Bought</div><b>${buyBtc.toFixed(8)}</b></div>
-        <div class="card"><div class="small">BTC Rewards</div><b>${rewardBtc.toFixed(8)}</b></div>
-        <div class="card"><div class="small">BTC Received</div><b>${recvBtc.toFixed(8)}</b></div>
-        <div class="card"><div class="small">BTC Sent</div><b>${sentBtc.toFixed(8)}</b></div>
+        <div class="card"><div class="small">${esc(assets.join('/'))} Bought</div><b>${buyUnits.toFixed(8)}</b></div>
+        <div class="card"><div class="small">${esc(assets.join('/'))} Rewards</div><b>${rewardUnits.toFixed(8)}</b></div>
+        <div class="card"><div class="small">${esc(assets.join('/'))} Received</div><b>${recvUnits.toFixed(8)}</b></div>
+        <div class="card"><div class="small">${esc(assets.join('/'))} Sent</div><b>${sentUnits.toFixed(8)}</b></div>
       </div>
-      <div class="card" style="margin-top:10px"><div class="small">Net BTC Flow (Bought + Rewards + Received - Sent)</div><b>${netFlow.toFixed(8)} BTC</b></div>
+      <div class="card" style="margin-top:10px"><div class="small">Net Unit Flow (Bought + Rewards + Received - Sent)</div><b>${netFlow.toFixed(8)} ${esc(assets.join('/'))}</b></div>
       <p class="small" style="margin-top:8px">Use this as a reconciliation helper against your exchange balance snapshot date.</p>
     `;
   } catch (e) {
