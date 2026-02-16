@@ -141,6 +141,18 @@ body.mode-bteth{--accent:#60a5fa;--bg:#0b1020;--panel:#141a2e;--line:#2a3458;--m
     <div id="flowResult"></div>
   </section>
 
+
+  <section class="panel">
+    <h2>Support / Donate</h2>
+    <p class="small">If this tool helped, tips are appreciated 🙏</p>
+    <div class="grid g4">
+      <div class="item"><div><b>Bitcoin (on-chain)</b></div><div class="small" id="donBtc">bc1qyccdm5ugyt2tn96425v5vyj2u4zsf09h0anr08</div><button class="chip" type="button" onclick="copyDonate('donBtc')">Copy</button></div>
+      <div class="item"><div><b>Lightning</b></div><div class="small" id="donLn">crypt0jt@shakepay.me</div><button class="chip" type="button" onclick="copyDonate('donLn')">Copy</button></div>
+      <div class="item"><div><b>ETH</b></div><div class="small" id="donEth">crypt0jt.eth</div><button class="chip" type="button" onclick="copyDonate('donEth')">Copy</button></div>
+      <div class="item"><div><b>Shakepay handle</b></div><div class="small" id="donSp">crypt0jt</div><button class="chip" type="button" onclick="copyDonate('donSp')">Copy</button><div class="small">(zero in crypt0jt)</div></div>
+    </div>
+  </section>
+
 </div>
 
 <dialog id="helpDialog">
@@ -201,6 +213,13 @@ const esc = (s='') => String(s)
   .replace(/'/g,'&#39;');
 
 function openPicker(input){ if (input.showPicker) input.showPicker(); else input.focus(); }
+function copyDonate(id){
+  const txt = (document.getElementById(id)?.textContent || '').trim();
+  if (!txt) return;
+  navigator.clipboard.writeText(txt)
+    .then(()=>{ $('status').textContent = `Copied: ${txt}`; })
+    .catch(()=>{ $('status').textContent = 'Copy failed; please copy manually.'; });
+}
 function getAssetMode(){
   return (document.querySelector('input[name="assetMode"]:checked') || {}).value || 'btc';
 }
