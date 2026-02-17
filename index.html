@@ -506,12 +506,37 @@ function buildRoiPnlChart(series){
   const lineFrom = (vals) => vals.map((v,i)=>`${i===0?'M':'L'}${xForIndex(i).toFixed(2)},${yForDollar(v).toFixed(2)}`).join(' ');
   const investedPath = lineFrom(investedVals);
 
-  // PnL split color by sign: green when >=0, red when <0
+  // PnL split color by sign with zero treated as non-negative; keep segments continuous at crossings
   let pnlPos = '', pnlNeg = '';
   for (let i=0;i<pnlVals.length;i++) {
-    const x = xForIndex(i).toFixed(2), y = yForDollar(pnlVals[i]).toFixed(2);
-    if (pnlVals[i] >= 0) pnlPos += `${(pnlPos && !pnlPos.endsWith(' '))?' ':''}${(i===0 || pnlVals[i-1] < 0)?'M':'L'}${x},${y}`;
-    else pnlNeg += `${(pnlNeg && !pnlNeg.endsWith(' '))?' ':''}${(i===0 || pnlVals[i-1] >= 0)?'M':'L'}${x},${y}`;
+    const curr = pnlVals[i];
+    const prev = i>0 ? pnlVals[i-1] : curr;
+    const x = xForIndex(i).toFixed(2), y = yForDollar(curr).toFixed(2);
+
+    // seed first point into both series for continuity where needed
+    if (i===0) {
+      if (curr >= 0) pnlPos += `M${x},${y}`;
+      else pnlNeg += `M${x},${y}`;
+      continue;
+    }
+
+    const crossedUp = prev < 0 && curr >= 0;
+    const crossedDown = prev >= 0 && curr < 0;
+
+    if (crossedUp) {
+      // bridge from previous point into green at crossing index
+      const px = xForIndex(i-1).toFixed(2), py = yForDollar(prev).toFixed(2);
+      pnlPos += ` M${px},${py} L${x},${y}`;
+      pnlNeg += ` L${x},${y}`;
+    } else if (crossedDown) {
+      const px = xForIndex(i-1).toFixed(2), py = yForDollar(prev).toFixed(2);
+      pnlNeg += ` M${px},${py} L${x},${y}`;
+      pnlPos += ` L${x},${y}`;
+    } else if (curr >= 0) {
+      pnlPos += ` L${x},${y}`;
+    } else {
+      pnlNeg += ` L${x},${y}`;
+    }
   }
 
   // Normalize overlays into dollar band for trend context only
