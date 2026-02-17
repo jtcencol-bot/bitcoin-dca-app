@@ -247,6 +247,8 @@ let editingDipIndex = null;
 let dipSortMode = 'date';
 let shakepayCsvTextCache = '';
 const MIN_PROCESS_DATE = '2010-01-01';
+const LARGE_RANGE_YEARS = 12;
+let largeRangeConfirmed = false;
 
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
@@ -643,6 +645,7 @@ $('clearAll').onclick = () => {
   if ($('shakepayFile')) $('shakepayFile').value = '';
   localStorage.removeItem('btc.lastCurrentPriceCad');
   localStorage.removeItem('btc.lastCurrentEthPriceCad');
+  largeRangeConfirmed = false;
   $('status').textContent = 'Cleared everything (including Shakepay import details).';
   resetDipEditor();
   render();
@@ -716,6 +719,22 @@ $('extractDipsFromShakepay').onclick = () => {
 
 $('calc').onclick = async () => {
   const status = $('status');
+
+  const candidateDates = [
+    ...rules.map(r=>r.date),
+    ...dips.map(d=>d.date),
+    ...shakepayBuyLots.map(l=>l.date)
+  ].filter(Boolean).sort();
+  if (candidateDates.length) {
+    const start = dateObj(candidateDates[0]);
+    const years = (new Date() - start) / (365.25*24*3600*1000);
+    if (years > LARGE_RANGE_YEARS && !largeRangeConfirmed) {
+      const ok = confirm(`Large range detected (~${years.toFixed(1)} years). This may take longer on mobile. Continue?`);
+      if (!ok) { status.textContent = 'Calculation cancelled.'; return; }
+      largeRangeConfirmed = true;
+    }
+  }
+
   status.textContent = 'Fetching market history…';
 
   try {
