@@ -245,6 +245,8 @@ const shakepayBuyLots = (jget('btc.shakepayBuyLots', []) || [])
   .filter(l => l.date && l.amount > 0);
 let editingDipIndex = null;
 let dipSortMode = 'date';
+let shakepayCsvTextCache = '';
+const MIN_PROCESS_DATE = '2010-01-01';
 
 const $ = id => document.getElementById(id);
 const fmt = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
@@ -304,14 +306,14 @@ applyMode();
 document.querySelectorAll('input[name="assetMode"]').forEach(el=>el.addEventListener('change', async ()=>{
   localStorage.setItem('btc.assetMode', getAssetMode());
   applyMode();
-  if (($('shakepayFile').files && $('shakepayFile').files[0]) || localStorage.getItem('btc.shakepayCsvText')) {
+  if (($('shakepayFile').files && $('shakepayFile').files[0]) || shakepayCsvTextCache) {
     try { await $('analyzeShakepay').onclick(); } catch {}
   }
 }));
 document.querySelectorAll('input[name="quoteMode"]').forEach(el=>el.addEventListener('change', async ()=>{
   localStorage.setItem('btc.quoteMode', getQuoteMode());
   applyMode();
-  if (($('shakepayFile').files && $('shakepayFile').files[0]) || localStorage.getItem('btc.shakepayCsvText')) {
+  if (($('shakepayFile').files && $('shakepayFile').files[0]) || shakepayCsvTextCache) {
     try { await $('analyzeShakepay').onclick(); } catch {}
   }
 }));
@@ -599,6 +601,7 @@ function buildRoiPnlChart(series){
 $('addRule').onclick = () => {
   const date = $('rDate').value; const end = $('rOngoing').checked ? '' : ($('rEnd').value || ''); const amount = Number($('rAmt').value); const freq = $('rFreq').value; const asset = $('rAsset').value;
   if (!date || amount<=0) return alert('Need valid start date + amount.');
+  if (date < MIN_PROCESS_DATE) return alert(`Start date too early. Please use ${MIN_PROCESS_DATE} or later.`);
   if (end && end < date) return alert('End date must be on/after start date.');
   const i = rules.findIndex(r=>r.date===date && (r.end||'')===end && (r.asset||'BTC')===asset);
   if (i>=0) rules[i] = {date, end, amount, freq, asset}; else rules.push({date, end, amount, freq, asset});
@@ -628,11 +631,11 @@ $('clearAll').onclick = () => {
   localStorage.removeItem('btc.rules');
   localStorage.removeItem('btc.dips');
   localStorage.removeItem('btc.shakepayBuyLots');
-  localStorage.removeItem('btc.shakepayCsvText');
   localStorage.removeItem('btc.sellBtcUnits');
   localStorage.removeItem('btc.sellEthUnits');
   localStorage.removeItem('btc.sellProceeds');
   shakepayBuyLots.splice(0, shakepayBuyLots.length);
+  shakepayCsvTextCache = '';
   $('result').innerHTML = '';
   $('shakepayResult').innerHTML = '';
   $('flowResult').innerHTML = '';
@@ -856,7 +859,7 @@ $('calc').onclick = async () => {
     const dipPnl = dipValue - dipInvested;
     const dipRoi = dipInvested ? (dipPnl / dipInvested) * 100 : null;
 
-    // Build a lightweight monthly trend chart for ROI/PnL
+    // Build chart series with a single-pass daily accumulation (clamped date range)
     const dateCandidates = [
       ...rules.map(r=>r.date),
       ...dips.map(d=>d.date),
@@ -864,22 +867,28 @@ $('calc').onclick = async () => {
     ].filter(Boolean).sort();
     const chartSeries = [];
     if (dateCandidates.length) {
-      const startDate = dateObj(dateCandidates[0]);
       const today = new Date();
+      const startRaw = dateObj(dateCandidates[0]);
+      const minStart = dateObj(MIN_PROCESS_DATE);
+      const startDate = startRaw < minStart ? minStart : startRaw;
       const fxNow = Number($('fx').value || 1.35);
-      for (let d = new Date(startDate); d <= today; d.setMonth(d.getMonth()+1)) {
+
+      const dipsByDate = {};
+      for (const dip of dips) { (dipsByDate[dip.date] ||= []).push(dip); }
+      const lotsByDate = {};
+      for (const lot of shakepayBuyLots) { (lotsByDate[lot.date] ||= []).push(lot); }
+
+      let ci = 0, cBtc = 0, cEth = 0;
+      for (let d = new Date(startDate); d <= today; d.setDate(d.getDate()+1)) {
         const k = dayKey(d);
-        let ci = 0, cBtc=0, cEth=0;
 
         if (useRules) {
-          for (let dd = new Date(startDate); dd <= d; dd.setDate(dd.getDate()+1)) {
-            const dk = dayKey(dd);
-            const ab = dcaAmountOnDate(dk,'BTC');
-            const ae = dcaAmountOnDate(dk,'ETH');
-            if (ab>0) { const px=priceForDate(maps['BTC'], dd); if (px){ ci+=ab; cBtc += ab/px; } }
-            if (ae>0) { const px=priceForDate(maps['ETH']||maps['BTC'], dd); if (px){ ci+=ae; cEth += ae/px; } }
-          }
-          for (const dip of dips.filter(x=>x.date<=k)) {
+          const ab = dcaAmountOnDate(k,'BTC');
+          const ae = dcaAmountOnDate(k,'ETH');
+          if (ab>0) { const px=priceForDate(maps['BTC'], d); if (px){ ci+=ab; cBtc += ab/px; } }
+          if (ae>0) { const px=priceForDate(maps['ETH']||maps['BTC'], d); if (px){ ci+=ae; cEth += ae/px; } }
+
+          for (const dip of (dipsByDate[k] || [])) {
             const asset = (dip.asset||'BTC').toUpperCase();
             let got = 0;
             if (asset==='ETH') {
@@ -899,18 +908,21 @@ $('calc').onclick = async () => {
         }
 
         if (useShakepayLots) {
-          for (const lot of shakepayBuyLots.filter(x=>x.date<=k)) {
+          for (const lot of (lotsByDate[k] || [])) {
             const asset = (lot.asset||'BTC').toUpperCase();
             ci += convertAmount(Number(lot.amount), String(lot.ccy||'CAD').toUpperCase(), quote, fxNow);
             if (asset==='ETH') cEth += Number(lot.btc||0); else cBtc += Number(lot.btc||0);
           }
-          cBtc = Math.max(0, cBtc - sellBtcUnits);
-          cEth = Math.max(0, cEth - sellEthUnits);
         }
 
+        const isMonthTick = d.getDate() === 1 || dayKey(d) === dayKey(today);
+        if (!isMonthTick) continue;
+
         const pxB = priceForDate(maps['BTC'], d) || current;
-        const pxE = (maps['ETH'] ? (priceForDate(maps['ETH'], d) || currentEth || 0) : 0);
-        const cv = cBtc*pxB + cEth*pxE + (useShakepayLots ? sellProceeds : 0);
+        const pxE = maps['ETH'] ? (priceForDate(maps['ETH'], d) || currentEth || 0) : 0;
+        const adjBtc = useShakepayLots ? Math.max(0, cBtc - sellBtcUnits) : cBtc;
+        const adjEth = useShakepayLots ? Math.max(0, cEth - sellEthUnits) : cEth;
+        const cv = (adjBtc*pxB) + (adjEth*pxE) + (useShakepayLots ? sellProceeds : 0);
         const cp = cv - ci;
         const cr = ci ? (cp/ci)*100 : 0;
         chartSeries.push({date:k, invested:ci, pnl:cp, roi:cr, btcPrice:pxB, ethPrice:pxE});
@@ -1002,9 +1014,9 @@ $('analyzeShakepay').onclick = async () => {
     const file = $('shakepayFile').files[0];
     let text = '';
     if (file) text = await file.text();
-    else text = localStorage.getItem('btc.shakepayCsvText') || '';
+    else text = shakepayCsvTextCache || '';
     if (!text) throw new Error('Pick your Shakepay CSV first.');
-    localStorage.setItem('btc.shakepayCsvText', text);
+    shakepayCsvTextCache = text;
     const rows = parseCsv(text).map(normalizeShakepayRow);
     if (!rows.length) throw new Error('No rows found in Shakepay file.');
 
