@@ -492,28 +492,66 @@ function linePath(points, minY, maxY, w, h, pad){
 
 function buildRoiPnlChart(series){
   if (!series?.length) return '';
-  const w=960, h=260, pad=22;
-  const roiVals = series.map(s=>Number(s.roi||0));
+  const w=980, h=300, padL=56, padR=56, padT=16, padB=34;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
   const pnlVals = series.map(s=>Number(s.pnl||0));
-  const all = roiVals.concat(pnlVals);
-  const minY = Math.min(...all);
-  const maxY = Math.max(...all);
-  const roiPath = linePath(roiVals,minY,maxY,w,h,pad);
-  const pnlPath = linePath(pnlVals,minY,maxY,w,h,pad);
-  const zeroY = h - pad - ((0-minY)/((maxY-minY)||1))*(h-pad*2);
+  const roiVals = series.map(s=>Number(s.roi||0));
+  const btcVals = series.map(s=>Number(s.btcPrice||0)).filter(v=>Number.isFinite(v) && v>0);
+
+  const minPnl = Math.min(0, ...pnlVals);
+  const maxPnl = Math.max(0, ...pnlVals);
+  const minRoi = Math.min(0, ...roiVals);
+  const maxRoi = Math.max(0, ...roiVals);
+
+  const pnlPath = linePath(pnlVals, minPnl, maxPnl, w-padR, h-padB, padL);
+  const roiPath = linePath(roiVals, minRoi, maxRoi, w-padR, h-padB, padL);
+
+  let btcPath = '';
+  if (btcVals.length) {
+    const minB = Math.min(...btcVals), maxB = Math.max(...btcVals);
+    const points = series.map(s=>Number(s.btcPrice||0));
+    btcPath = linePath(points, minB, maxB, w-padR, h-padB, padL);
+  }
+
+  const yForPnl = (v)=> (h-padB) - ((v-minPnl)/((maxPnl-minPnl)||1))*innerH;
+  const yForRoi = (v)=> (h-padB) - ((v-minRoi)/((maxRoi-minRoi)||1))*innerH;
+  const xForIndex = (i)=> padL + (series.length>1 ? (i*(innerW/(series.length-1))) : 0);
+
+  const zeroPnlY = yForPnl(0);
+  const ticks = [0, Math.floor((series.length-1)/2), series.length-1].filter((v,i,a)=>a.indexOf(v)===i && v>=0);
+  const tickLabels = ticks.map(i=>{
+    const d = new Date(series[i].date+'T00:00:00');
+    const label = d.toLocaleDateString('en-CA',{year:'numeric',month:'short'});
+    return `<text x="${xForIndex(i).toFixed(2)}" y="${h-8}" text-anchor="middle" fill="#8fa2d6" font-size="11">${label}</text>`;
+  }).join('');
+
   const last = series[series.length-1];
+  const quote = getQuoteMode();
   return `
     <div class="chartWrap">
-      <div class="small"><b>Performance Trend</b> (sampled monthly): ROI% and PnL (${getQuoteMode()})</div>
-      <svg viewBox="0 0 ${w} ${h}" width="100%" height="220" role="img" aria-label="ROI and PnL trend chart">
-        <line x1="${pad}" y1="${zeroY.toFixed(2)}" x2="${w-pad}" y2="${zeroY.toFixed(2)}" stroke="#33406a" stroke-dasharray="4 4" />
-        <path d="${roiPath}" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" />
+      <div class="small"><b>Performance Trend</b> — PnL (left), ROI% (right), BTC price (overlay)</div>
+      <svg viewBox="0 0 ${w} ${h}" width="100%" height="260" role="img" aria-label="PnL, ROI, and BTC price trend chart">
+        <rect x="${padL}" y="${padT}" width="${innerW}" height="${innerH}" fill="rgba(8,14,32,.35)" stroke="#2b3d69" />
+        <line x1="${padL}" y1="${zeroPnlY.toFixed(2)}" x2="${w-padR}" y2="${zeroPnlY.toFixed(2)}" stroke="#33406a" stroke-dasharray="4 4" />
+        <path d="${btcPath}" fill="none" stroke="#f7931a" stroke-opacity=".5" stroke-width="2" stroke-dasharray="5 4" />
         <path d="${pnlPath}" fill="none" stroke="#60a5fa" stroke-width="3" stroke-linecap="round" />
+        <path d="${roiPath}" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" />
+        ${tickLabels}
+        <text x="8" y="${padT+12}" fill="#8fa2d6" font-size="11">PnL (${quote})</text>
+        <text x="${w-8}" y="${padT+12}" text-anchor="end" fill="#8fa2d6" font-size="11">ROI (%)</text>
+        <text x="8" y="${(h-padB).toFixed(2)}" fill="#8fa2d6" font-size="11">$${fmt(minPnl)}</text>
+        <text x="8" y="${(padT+12).toFixed(2)}" fill="#8fa2d6" font-size="11">$${fmt(maxPnl)}</text>
+        <text x="${w-8}" y="${(h-padB).toFixed(2)}" text-anchor="end" fill="#8fa2d6" font-size="11">${minRoi.toFixed(1)}%</text>
+        <text x="${w-8}" y="${(padT+12).toFixed(2)}" text-anchor="end" fill="#8fa2d6" font-size="11">${maxRoi.toFixed(1)}%</text>
       </svg>
       <div class="chartLegend small">
-        <span><span class="dot" style="background:#22c55e"></span>ROI % (last: ${Number(last.roi||0).toFixed(2)}%)</span>
         <span><span class="dot" style="background:#60a5fa"></span>PnL (last: $${fmt(Number(last.pnl||0))})</span>
+        <span><span class="dot" style="background:#22c55e"></span>ROI (last: ${Number(last.roi||0).toFixed(2)}%)</span>
+        <span><span class="dot" style="background:#f7931a"></span>BTC price overlay (normalized)</span>
       </div>
+      <div class="small" style="margin-top:6px">Note: BTC overlay is normalized for trend context only (not same axis units).</div>
     </div>`;
 }
 
@@ -834,7 +872,7 @@ $('calc').onclick = async () => {
         const cv = cBtc*pxB + cEth*pxE + (useShakepayLots ? sellProceeds : 0);
         const cp = cv - ci;
         const cr = ci ? (cp/ci)*100 : 0;
-        chartSeries.push({date:k, pnl:cp, roi:cr});
+        chartSeries.push({date:k, pnl:cp, roi:cr, btcPrice:pxB});
       }
     }
 
